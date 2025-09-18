@@ -1,0 +1,75 @@
+Creative Commons Attribution-NonCommercial 4.0 International
+with Additional Terms for WhatPulse Integration
+
+Copyright (c) 2025 WhatPulse. All rights reserved.
+
+=======================================================================
+
+CREATIVE COMMONS ATTRIBUTION-NONCOMMERCIAL 4.0 INTERNATIONAL
+
+This work is licensed under the Creative Commons Attribution-NonCommercial 4.0 
+International License. To view a copy of this license, visit:
+http://creativecommons.org/licenses/by-nc/4.0/
+
+Under CC BY-NC 4.0, you are free to:
+- Share — copy and redistribute the material in any medium or format
+- Adapt — remix, transform, and build upon the material
+
+Under the following terms:
+- Attribution — You must give appropriate credit, provide a link to the license, 
+  and indicate if changes were made.
+- NonCommercial — You may not use the material for commercial purposes.
+
+=======================================================================
+
+ADDITIONAL TERMS FOR WHATPULSE INTEGRATION
+
+In addition to the CC BY-NC 4.0 terms above, the following restrictions apply 
+specifically to this software's integration with WhatPulse services:
+
+1. PROTOCOL INTEGRITY
+   You may not reverse engineer, decompile, or attempt to discover the 
+   communication protocol between this software and WhatPulse services.
+
+2. DATA TRANSMISSION PROTECTION
+   You may not modify, intercept, falsify, inject, or tamper with data 
+   transmitted between this software and WhatPulse, including but not limited to:
+   - Network statistics and metrics
+   - Authentication or identification data
+   - Protocol commands or responses
+
+3. SERVICE INTEGRATION
+   Any modifications to this software must maintain compatibility with official 
+   WhatPulse clients and services without circumventing intended functionality.
+
+4. ATTRIBUTION REQUIREMENTS
+   When redistributing or modifying this software, you must:
+   - Retain all copyright notices and license information
+   - Clearly indicate any modifications made
+   - Provide attribution to "WhatPulse External PCap Service by WhatPulse"
+
+=======================================================================
+
+DISCLAIMER
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+=======================================================================
+
+ENFORCEMENT
+
+Violations of these terms may result in:
+- Automatic termination of license rights
+- Suspension of WhatPulse services
+- Legal action to protect intellectual property
+
+For questions about licensing or commercial use: support@whatpulse.org
+
+This license applies to the WhatPulse External PCap Service software.
+WhatPulse is a trademark of WhatPulse.
