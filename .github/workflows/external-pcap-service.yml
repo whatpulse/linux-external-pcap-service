@@ -21,7 +21,7 @@ on:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repository
@@ -133,17 +133,33 @@ jobs:
         run: |
           mkdir -p dist/packages
 
-          # Copy packages from script build directories
-          find scripts -name "*.deb" -exec cp {} dist/packages/ \; 2>/dev/null || echo "No .deb files found"
-          find scripts -name "*.rpm" -exec cp {} dist/packages/ \; 2>/dev/null || echo "No .rpm files found"
-          find scripts -name "*.pkg.tar.*" -exec cp {} dist/packages/ \; 2>/dev/null || echo "No .pkg.tar.* files found"
+          # Debug: List what files exist after build
+          echo "=== Files in dist/ directory ==="
+          ls -la dist/ || echo "dist/ directory is empty or doesn't exist"
+          echo ""
+          echo "=== Files in scripts/ directory tree ==="
+          find scripts -type f -name "*.deb" -o -name "*.rpm" -o -name "*.pkg.tar.*" | head -20 || echo "No package files found in scripts/"
+          echo ""
+
+          # Copy packages - check both locations to be safe
+          # All build scripts should move final packages to dist/, but let's check both
+
+          # First, copy from dist/ directory (primary location)
+          find dist -maxdepth 1 -name "*.deb" -exec cp {} dist/packages/ \; 2>/dev/null || echo "No .deb files found in dist/"
+          find dist -maxdepth 1 -name "*.rpm" -exec cp {} dist/packages/ \; 2>/dev/null || echo "No .rpm files found in dist/"
+          find dist -maxdepth 1 -name "*.pkg.tar.*" -exec cp {} dist/packages/ \; 2>/dev/null || echo "No .pkg.tar.* files found in dist/"
+
+          # Also check scripts/ directory as fallback (in case move failed)
+          find scripts -name "*.deb" -exec cp {} dist/packages/ \; 2>/dev/null || echo "No .deb files found in scripts/"
+          find scripts -name "*.rpm" -exec cp {} dist/packages/ \; 2>/dev/null || echo "No .rpm files found in scripts/"
+          find scripts -name "*.pkg.tar.*" -exec cp {} dist/packages/ \; 2>/dev/null || echo "No .pkg.tar.* files found in scripts/"
 
           # Copy source distribution and standalone binary
           cp -v dist/*.tar.gz dist/packages/ 2>/dev/null || echo "No .tar.gz files found"
           cp -v whatpulse-pcap-service-${{ steps.version.outputs.version }}-linux-amd64 dist/packages/
 
           echo "📦 Final artifacts:"
-          ls -la ../dist/packages/
+          ls -la dist/packages/
 
       - name: Generate checksums
         run: |
@@ -157,6 +173,10 @@ jobs:
           name: pcap-service-packages-${{ steps.version.outputs.version }}
           path: dist/packages/
           retention-days: 30
+
+      - name: Get build date
+        id: date
+        run: echo "date=$(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         if: |
@@ -174,7 +194,7 @@ jobs:
             ---
 
             **Built from commit:** ${{ github.sha }}
-            **Build date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+            **Build date:** ${{ steps.date.outputs.date }}
           files: |
             dist/packages/*
           draft: false

@@ -28,7 +28,7 @@
 #include <set>
 #include <cstdint>
 
-#define PCAP_SERVICE_VERSION "1.0.0"
+#define PCAP_SERVICE_VERSION "1.0.1"
 
 /**
  * Main service class that manages PCap capture and network communication

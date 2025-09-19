@@ -14,38 +14,55 @@ When WhatPulse runs as an AppImage or in other restricted environments, it may n
 
 ### Package Manager Installation (Recommended)
 
+Download the latest packages from the [GitHub Releases page](https://github.com/whatpulse/external-pcap-service/releases/latest).
+
 Choose the package format for your Linux distribution:
 
 #### Debian/Ubuntu (.deb)
 ```bash
-wget https://releases.whatpulse.org/latest/external-pcap-service/whatpulse-pcap-service_1.0.0_amd64.deb
-sudo dpkg -i whatpulse-pcap-service_1.0.0_amd64.deb
+# Download from releases page, then:
+sudo dpkg -i whatpulse-pcap-service_*_amd64.deb
 sudo apt-get install -f  # Fix any missing dependencies
 ```
 
 #### Red Hat/Fedora/CentOS (.rpm)
 ```bash
-wget https://releases.whatpulse.org/latest/external-pcap-service/whatpulse-pcap-service-1.0.0-1.x86_64.rpm
-sudo rpm -ivh whatpulse-pcap-service-1.0.0-1.x86_64.rpm
+# Download from releases page, then:
+sudo rpm -ivh whatpulse-pcap-service-*-1.x86_64.rpm
 # OR on Fedora/newer systems:
-sudo dnf install whatpulse-pcap-service-1.0.0-1.x86_64.rpm
+sudo dnf install whatpulse-pcap-service-*-1.x86_64.rpm
 ```
 
-#### Arch Linux (.pkg.tar.xz)
+#### Arch Linux (.pkg.tar.*)
 ```bash
-wget https://releases.whatpulse.org/latest/external-pcap-service/whatpulse-pcap-service-1.0.0-1-x86_64.pkg.tar.xz
-sudo pacman -U whatpulse-pcap-service-1.0.0-1-x86_64.pkg.tar.xz
+# Download from releases page, then:
+sudo pacman -U whatpulse-pcap-service-*-1-x86_64.pkg.tar.*
+```
+
+### Quick Download Commands
+
+For automated downloads, use these commands to get the latest release:
+
+```bash
+# Get latest release info
+LATEST_URL=$(curl -s https://api.github.com/repos/whatpulse/external-pcap-service/releases/latest | grep "browser_download_url" | grep "deb" | cut -d '"' -f 4)
+wget "$LATEST_URL"
+
+# Or browse all releases:
+# https://github.com/whatpulse/external-pcap-service/releases
 ```
 
 ### Build from Source
 
-If packages aren't available for your distribution:
+If packages aren't available for your distribution, or you prefer to build from source:
 
 ```bash
-# Download and extract source
-wget https://releases.whatpulse.org/latest/external-pcap-service/whatpulse-pcap-service-1.0.0-source.tar.gz
-tar xzf whatpulse-pcap-service-1.0.0-source.tar.gz
-cd whatpulse-pcap-service-1.0.0
+# Download and extract source from GitHub releases
+# Visit: https://github.com/whatpulse/external-pcap-service/releases
+# Download: whatpulse-pcap-service-VERSION-source.tar.gz
+
+tar xzf whatpulse-pcap-service-*-source.tar.gz
+cd whatpulse-pcap-service-*
 
 # Install build dependencies
 # Debian/Ubuntu:
