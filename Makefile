@@ -43,7 +43,8 @@ dist-source:
 	mkdir -p dist
 	tar czf dist/$(TARGET)-$(VERSION)-source.tar.gz \
 		*.cpp *.h Makefile README.md LICENSE \
-		whatpulse-pcap-service.service install.sh uninstall.sh
+		whatpulse-pcap-service.service whatpulse-pcap-service-manual.service \
+		install.sh uninstall.sh scripts/
 
 # Clean target
 clean:
@@ -51,11 +52,12 @@ clean:
 	rm -rf dist/
 	rm -rf packaging/*/build/
 
-# Install target (requires root)
+# Install target (requires root) - for manual installation
 install: $(TARGET)
 	install -m 755 $(TARGET) /usr/local/bin/
-	install -m 644 whatpulse-pcap-service.service /etc/systemd/system/ || echo "Service file not found, skipping systemd service installation"
+	install -m 644 whatpulse-pcap-service-manual.service /etc/systemd/system/whatpulse-pcap-service.service
 	systemctl daemon-reload || echo "Failed to reload systemd daemon"
+	echo "Manual installation complete. To start: sudo systemctl enable --now whatpulse-pcap-service"
 
 # Uninstall target
 uninstall:

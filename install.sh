@@ -59,8 +59,10 @@ if ! ./whatpulse-pcap-service --version >/dev/null 2>&1; then
 fi
 
 # Install the service
-echo "Installing service..."
-sudo make install
+# Install systemd service
+echo "Installing systemd service..."
+sudo cp whatpulse-pcap-service-manual.service /etc/systemd/system/whatpulse-pcap-service.service
+sudo systemctl daemon-reload
 
 echo ""
 echo "Installation completed successfully!"

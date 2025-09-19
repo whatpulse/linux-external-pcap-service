@@ -7,7 +7,7 @@ A companion service that enables network monitoring for WhatPulse when running i
 When WhatPulse runs as an AppImage or in other restricted environments, it may not have direct access to capture network packets. This service runs alongside WhatPulse to provide network monitoring capabilities by:
 
 - Capturing network traffic using system-level access
-- Filtering and processing packet data safely  
+- Filtering and processing packet data safely
 - Forwarding relevant statistics to WhatPulse via local connection
 
 ## Installation
@@ -23,7 +23,7 @@ sudo dpkg -i whatpulse-pcap-service_1.0.0_amd64.deb
 sudo apt-get install -f  # Fix any missing dependencies
 ```
 
-#### Red Hat/Fedora/CentOS (.rpm)  
+#### Red Hat/Fedora/CentOS (.rpm)
 ```bash
 wget https://releases.whatpulse.org/latest/external-pcap-service/whatpulse-pcap-service-1.0.0-1.x86_64.rpm
 sudo rpm -ivh whatpulse-pcap-service-1.0.0-1.x86_64.rpm
@@ -61,6 +61,17 @@ sudo pacman -S base-devel libpcap
 make
 sudo make install
 ```
+
+## Installation Paths
+
+The service uses different paths depending on the installation method:
+
+- **Package installations** (deb, rpm, etc.): Binary at `/usr/bin/whatpulse-pcap-service`
+- **Manual installations** (make install, install.sh): Binary at `/usr/local/bin/whatpulse-pcap-service`
+
+Both use the same systemd service name: `whatpulse-pcap-service`
+
+The appropriate systemd service file is automatically selected during installation.
 
 ## Usage
 
@@ -115,7 +126,7 @@ sudo whatpulse-pcap-service --verbose
 # Debian/Ubuntu
 sudo apt-get remove whatpulse-pcap-service
 
-# Red Hat/Fedora/CentOS  
+# Red Hat/Fedora/CentOS
 sudo rpm -e whatpulse-pcap-service
 
 # Arch Linux
@@ -153,3 +164,27 @@ See the [LICENSE](LICENSE) file for complete terms and conditions.
 - ❌ Protocol circumvention or data injection
 
 For commercial licensing inquiries: support@whatpulse.org
+
+
+## Release Process
+
+Releases are automated via GitHub Actions. Follow these steps to create a new release:
+
+**Update version:**
+```bash
+# Edit pcapservice.h
+# Change PCAP_SERVICE_VERSION to your new version (e.g., "1.0.1")
+```
+
+**Commit and push changes:**
+```bash
+git add pcapservice.h
+git commit -m "bump version to 1.0.1"
+git push origin master
+```
+
+**Create and push version tag:**
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
