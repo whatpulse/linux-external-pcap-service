@@ -2,7 +2,7 @@ CC=g++
 CFLAGS=-std=c++17 -Wall -Wextra -O2 -pthread
 LDFLAGS=-lpcap -pthread
 TARGET=whatpulse-pcap-service
-SOURCES=main.cpp pcapservice.cpp
+SOURCES=main.cpp pcapservice.cpp tcpclient.cpp pcapcapturethread.cpp
 VERSION=1.0.0
 
 # Default target
