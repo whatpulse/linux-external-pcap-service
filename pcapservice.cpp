@@ -224,8 +224,8 @@ void PcapService::networkThreadFunction()
 {
     LOG_INFO("Network thread started");
 
-    auto lastReconnectAttempt = std::chrono::steady_clock::now();
     const auto reconnectInterval = std::chrono::seconds(30);
+    auto lastReconnectAttempt = std::chrono::steady_clock::now() - reconnectInterval;
 
     while (m_running.load())
     {
@@ -256,7 +256,12 @@ void PcapService::networkThreadFunction()
 
                 if (m_tcpClient->isConnected())
                 {
-                    sendPacketData(packet);
+                    if (!sendPacketData(packet))
+                    {
+                        // Send failed, likely connection was lost
+                        // Reset reconnection timer to attempt immediate reconnection
+                        lastReconnectAttempt = std::chrono::steady_clock::now() - reconnectInterval;
+                    }
                 }
                 else
                 {
@@ -282,11 +287,11 @@ void PcapService::connectToWhatPulse()
     m_tcpClient->connect(m_host, m_port);
 }
 
-void PcapService::sendPacketData(const PacketData &packet)
+bool PcapService::sendPacketData(const PacketData &packet)
 {
     if (!m_tcpClient->isConnected())
     {
-        return;
+        return false;
     }
 
     // Create binary protocol data
@@ -345,7 +350,10 @@ void PcapService::sendPacketData(const PacketData &packet)
     if (!m_tcpClient->send(data))
     {
         LOG_DEBUG("Failed to send packet data");
+        return false;
     }
+    
+    return true;
 }
 
 std::vector<std::string> PcapService::discoverNetworkInterfaces()

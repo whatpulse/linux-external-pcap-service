@@ -21,6 +21,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <errno.h>
+#include <sys/time.h>
 
 TcpClient::TcpClient() : m_socket(-1), m_connected(false), m_verbose(false), m_port(0) {}
 
@@ -51,6 +53,22 @@ bool TcpClient::connect(const std::string &host, uint16_t port)
     return false;
   }
 
+  // Set socket options for better error detection
+  int keepalive = 1;
+  if (setsockopt(m_socket, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive)) < 0)
+  {
+    Logger::getInstance().logConnectionFailed(host, port, "Failed to set SO_KEEPALIVE: " + std::string(strerror(errno)));
+  }
+
+  // Set timeout for send operations
+  struct timeval timeout;
+  timeout.tv_sec = 5;  // 5 second timeout
+  timeout.tv_usec = 0;
+  if (setsockopt(m_socket, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) < 0)
+  {
+    Logger::getInstance().logConnectionFailed(host, port, "Failed to set SO_SNDTIMEO: " + std::string(strerror(errno)));
+  }
+
   // Resolve hostname
   struct hostent *hostInfo = gethostbyname(host.c_str());
   if (!hostInfo)
@@ -67,6 +85,15 @@ bool TcpClient::connect(const std::string &host, uint16_t port)
   serverAddr.sin_family = AF_INET;
   serverAddr.sin_port = htons(port);
   memcpy(&serverAddr.sin_addr, hostInfo->h_addr_list[0], hostInfo->h_length);
+
+  // Set connection timeout
+  struct timeval connect_timeout;
+  connect_timeout.tv_sec = 10;  // 10 second connection timeout
+  connect_timeout.tv_usec = 0;
+  if (setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, &connect_timeout, sizeof(connect_timeout)) < 0)
+  {
+    Logger::getInstance().logConnectionFailed(host, port, "Failed to set SO_RCVTIMEO: " + std::string(strerror(errno)));
+  }
 
   // Connect
   if (::connect(m_socket, reinterpret_cast<struct sockaddr *>(&serverAddr), sizeof(serverAddr)) < 0)
@@ -86,25 +113,47 @@ bool TcpClient::connect(const std::string &host, uint16_t port)
 void TcpClient::disconnect()
 {
   std::lock_guard<std::mutex> lock(m_mutex);
-
-  if (m_socket >= 0)
-  {
-    close(m_socket);
-    m_socket = -1;
-  }
-
-  if (m_connected)
-  {
-    Logger::getInstance().logDisconnected(m_host, m_port);
-  }
-
-  m_connected = false;
+  forceDisconnect();
 }
 
 bool TcpClient::isConnected() const
 {
   std::lock_guard<std::mutex> lock(m_mutex);
-  return m_connected;
+  
+  if (!m_connected || m_socket < 0)
+  {
+    return false;
+  }
+  
+  // Check if socket is still valid using a non-blocking test
+  int error = 0;
+  socklen_t len = sizeof(error);
+  int result = getsockopt(m_socket, SOL_SOCKET, SO_ERROR, &error, &len);
+  
+  if (result != 0 || error != 0)
+  {
+    // Socket has an error, connection is not valid
+    return false;
+  }
+  
+  return true;
+}
+
+void TcpClient::forceDisconnect()
+{
+  // This method assumes mutex is already locked by caller
+  if (m_socket >= 0)
+  {
+    close(m_socket);
+    m_socket = -1;
+  }
+  
+  if (m_connected)
+  {
+    Logger::getInstance().logDisconnected(m_host, m_port);
+  }
+  
+  m_connected = false;
 }
 
 bool TcpClient::send(const std::vector<uint8_t> &data)
@@ -121,11 +170,36 @@ bool TcpClient::send(const std::vector<uint8_t> &data)
 
   while (totalSent < data.size())
   {
-    ssize_t sent = ::send(m_socket, dataPtr + totalSent, data.size() - totalSent, 0);
+    ssize_t sent = ::send(m_socket, dataPtr + totalSent, data.size() - totalSent, MSG_NOSIGNAL);
     if (sent < 0)
     {
-      Logger::getInstance().logSendError(strerror(errno));
-      m_connected = false;
+      // Handle different error conditions
+      if (errno == EPIPE || errno == ECONNRESET || errno == ENOTCONN || errno == EBADF)
+      {
+        // Connection was closed by peer or socket is invalid
+        Logger::getInstance().logSendError("Connection lost: " + std::string(strerror(errno)));
+        forceDisconnect();
+        return false;
+      }
+      else if (errno == EAGAIN || errno == EWOULDBLOCK)
+      {
+        // Temporary error, could retry but for now treat as failure
+        Logger::getInstance().logSendError("Send would block: " + std::string(strerror(errno)));
+        return false;
+      }
+      else
+      {
+        // Other error
+        Logger::getInstance().logSendError("Send error: " + std::string(strerror(errno)));
+        forceDisconnect();
+        return false;
+      }
+    }
+    else if (sent == 0)
+    {
+      // Connection closed by peer
+      Logger::getInstance().logSendError("Connection closed by peer");
+      forceDisconnect();
       return false;
     }
     totalSent += sent;
