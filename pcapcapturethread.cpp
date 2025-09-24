@@ -14,6 +14,7 @@
 
 #include "pcapcapturethread.h"
 #include "pcapservice.h"
+#include "logger.h"
 #include <iostream>
 #include <cstring>
 #include <chrono>
@@ -73,10 +74,7 @@ void PcapCaptureThread::run()
 {
   char errbuf[PCAP_ERRBUF_SIZE];
 
-  if (m_verbose)
-  {
-    std::cout << "Starting capture on interface: " << m_interface << std::endl;
-  }
+  LOG_INFO("Starting capture on interface: " + m_interface);
 
   // Open pcap handle
   m_pcapHandle = pcap_open_live(m_interface.c_str(),
@@ -87,7 +85,7 @@ void PcapCaptureThread::run()
 
   if (!m_pcapHandle)
   {
-    std::cerr << "Unable to open interface " << m_interface << ": " << errbuf << std::endl;
+    LOG_ERROR("Unable to open interface " + m_interface + ": " + std::string(errbuf));
     return;
   }
 
@@ -95,8 +93,7 @@ void PcapCaptureThread::run()
   struct bpf_program filter;
   if (pcap_compile(m_pcapHandle, &filter, "tcp or udp", 1, PCAP_NETMASK_UNKNOWN) == -1)
   {
-    std::cerr << "Unable to compile filter for interface " << m_interface << ": "
-              << pcap_geterr(m_pcapHandle) << std::endl;
+    LOG_ERROR("Unable to compile filter for interface " + m_interface + ": " + std::string(pcap_geterr(m_pcapHandle)));
     pcap_close(m_pcapHandle);
     m_pcapHandle = nullptr;
     return;
@@ -104,8 +101,7 @@ void PcapCaptureThread::run()
 
   if (pcap_setfilter(m_pcapHandle, &filter) == -1)
   {
-    std::cerr << "Unable to set filter for interface " << m_interface << ": "
-              << pcap_geterr(m_pcapHandle) << std::endl;
+    LOG_ERROR("Unable to set filter for interface " + m_interface + ": " + std::string(pcap_geterr(m_pcapHandle)));
     pcap_freecode(&filter);
     pcap_close(m_pcapHandle);
     m_pcapHandle = nullptr;
@@ -115,10 +111,7 @@ void PcapCaptureThread::run()
   pcap_freecode(&filter);
   m_capturing.store(true);
 
-  if (m_verbose)
-  {
-    std::cout << "Capture started successfully on interface: " << m_interface << std::endl;
-  }
+  LOG_INFO("Capture started successfully on interface: " + m_interface);
 
   // Start packet capture loop
   while (!m_shouldStop.load())
@@ -129,8 +122,7 @@ void PcapCaptureThread::run()
       // Error occurred
       if (!m_shouldStop.load())
       {
-        std::cerr << "Error in pcap_dispatch for interface " << m_interface << ": "
-                  << pcap_geterr(m_pcapHandle) << std::endl;
+        LOG_ERROR("Error in pcap_dispatch for interface " + m_interface + ": " + std::string(pcap_geterr(m_pcapHandle)));
       }
       break;
     }
@@ -154,10 +146,7 @@ void PcapCaptureThread::run()
     }
   }
 
-  if (m_verbose)
-  {
-    std::cout << "Capture stopped on interface: " << m_interface << std::endl;
-  }
+  LOG_INFO("Capture stopped on interface: " + m_interface);
 }
 
 void PcapCaptureThread::packetHandler(u_char *userData, const struct pcap_pkthdr *header, const u_char *packet)

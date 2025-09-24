@@ -14,7 +14,7 @@ When WhatPulse runs as an AppImage or in other restricted environments, it may n
 
 ### Package Manager Installation (Recommended)
 
-Download the latest packages from the [GitHub Releases page](https://github.com/whatpulse/external-pcap-service/releases/latest).
+Download the latest packages from the [GitHub Releases page](https://github.com/whatpulse/linux-external-pcap-service).
 
 Choose the package format for your Linux distribution:
 
@@ -45,11 +45,11 @@ For automated downloads, use these commands to get the latest release:
 
 ```bash
 # Get latest release info
-LATEST_URL=$(curl -s https://api.github.com/repos/whatpulse/external-pcap-service/releases/latest | grep "browser_download_url" | grep "deb" | cut -d '"' -f 4)
+LATEST_URL=$(curl -s https://api.github.com/repos/whatpulse/linux-external-pcap-service/releases/latest | grep "browser_download_url" | grep "deb" | cut -d '"' -f 4)
 wget "$LATEST_URL"
 
 # Or browse all releases:
-# https://github.com/whatpulse/external-pcap-service/releases
+# https://github.com/whatpulse/linux-external-pcap-service/releases
 ```
 
 ### Build from Source
@@ -58,7 +58,7 @@ If packages aren't available for your distribution, or you prefer to build from 
 
 ```bash
 # Download and extract source from GitHub releases
-# Visit: https://github.com/whatpulse/external-pcap-service/releases
+# Visit: https://github.com/whatpulse/linux-external-pcap-service/releases
 # Download: whatpulse-pcap-service-VERSION-source.tar.gz
 
 tar xzf whatpulse-pcap-service-*-source.tar.gz
