@@ -13,6 +13,7 @@
  */
 
 #include "pcapservice.h"
+#include "logger.h"
 #include <iostream>
 #include <cstring>
 #include <chrono>
@@ -69,7 +70,7 @@ bool PcapService::start()
     // Check for root privileges (required for pcap)
     if (geteuid() != 0)
     {
-        std::cerr << "PCap service requires root privileges. Please run with sudo." << std::endl;
+        LOG_ERROR("PCap service requires root privileges. Please run with sudo.");
         return false;
     }
 
@@ -87,7 +88,7 @@ bool PcapService::start()
 
     if (interfaces.empty())
     {
-        std::cerr << "No suitable network interfaces found for monitoring" << std::endl;
+        LOG_ERROR("No suitable network interfaces found for monitoring");
         return false;
     }
 
@@ -96,7 +97,7 @@ bool PcapService::start()
 
     if (m_captureThreads.empty())
     {
-        std::cerr << "Failed to start any capture threads" << std::endl;
+        LOG_ERROR("Failed to start any capture threads");
         return false;
     }
 
@@ -158,10 +159,7 @@ void PcapService::stop()
         m_tcpClient->disconnect();
     }
 
-    if (m_verbose)
-    {
-        std::cout << "PCap service stopped" << std::endl;
-    }
+    LOG_INFO("PCap service stopped");
 }
 
 void PcapService::run()
@@ -179,37 +177,44 @@ void PcapService::onPacketCaptured(const PacketData &packet)
         return;
     }
 
-    if (m_verbose)
+    // Performance metrics tracking (aggregated across all interfaces)
+    static uint64_t packetCount = 0;
+    static uint64_t totalBytes = 0;
+    static uint64_t droppedPackets = 0;
+    static auto lastReport = std::chrono::steady_clock::now();
+
+    packetCount++;
+    totalBytes += packet.dataLength;
+
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastReport);
+
+    // Check if we should report performance (handled by Logger class)
+    if (elapsed.count() >= 60) // Check every minute, Logger will throttle appropriately
     {
-        static uint64_t packetCount = 0;
-        static uint64_t totalBytes = 0;
-        static auto lastReport = std::chrono::steady_clock::now();
-
-        packetCount++;
-        totalBytes += packet.dataLength;
-
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - lastReport);
-
-        if (elapsed.count() >= 5)
+        size_t queueSize;
         {
-            // Report every 5 seconds for debugging purposes
-            double mbps = (totalBytes * 8.0) / (elapsed.count() * 1024 * 1024);
-            if (LOG_LEVEL_DEBUG)
-            {
-                std::cout << "Captured " << packetCount << " packets in " << elapsed.count()
-                          << "s from " << packet.interfaceName << " (rate: " << std::fixed << std::setprecision(2)
-                          << mbps << " Mbps)" << std::endl;
-            }
-            lastReport = now;
-            packetCount = 0;
-            totalBytes = 0;
+            std::lock_guard<std::mutex> lock(m_queueMutex);
+            queueSize = m_packetQueue.size();
         }
+
+        Logger::getInstance().logPerformance(packet.interfaceName, packetCount, totalBytes,
+                                             elapsed.count(), queueSize, m_tcpClient->isConnected());
+
+        lastReport = now;
+        packetCount = 0;
+        totalBytes = 0;
     }
 
-    // Add packet to queue
+    // Add packet to queue with overflow protection
     {
         std::lock_guard<std::mutex> lock(m_queueMutex);
+        if (m_packetQueue.size() > 10000) // Prevent memory overflow
+        {
+            droppedPackets++;
+            LOG_WARNING("Packet queue full, dropping packet. Total dropped: " + std::to_string(droppedPackets));
+            return;
+        }
         m_packetQueue.push(packet);
     }
     m_queueCondition.notify_one();
@@ -217,10 +222,7 @@ void PcapService::onPacketCaptured(const PacketData &packet)
 
 void PcapService::networkThreadFunction()
 {
-    if (m_verbose)
-    {
-        std::cout << "Network thread started" << std::endl;
-    }
+    LOG_INFO("Network thread started");
 
     auto lastReconnectAttempt = std::chrono::steady_clock::now();
     const auto reconnectInterval = std::chrono::seconds(30);
@@ -256,13 +258,13 @@ void PcapService::networkThreadFunction()
                 {
                     sendPacketData(packet);
                 }
-                else if (m_verbose)
+                else
                 {
                     static auto lastWarning = std::chrono::steady_clock::now();
                     auto now = std::chrono::steady_clock::now();
-                    if (now - lastWarning >= std::chrono::seconds(10))
+                    if (now - lastWarning >= std::chrono::seconds(60)) // Reduced warning frequency
                     {
-                        std::cout << "Dropping packets - WhatPulse not connected" << std::endl;
+                        LOG_WARNING("Dropping packets - WhatPulse not connected");
                         lastWarning = now;
                     }
                 }
@@ -272,19 +274,11 @@ void PcapService::networkThreadFunction()
         }
     }
 
-    if (m_verbose)
-    {
-        std::cout << "Network thread stopped" << std::endl;
-    }
+    LOG_INFO("Network thread stopped");
 }
 
 void PcapService::connectToWhatPulse()
 {
-    if (m_verbose)
-    {
-        std::cout << "Connecting to WhatPulse at " << m_host << ":" << m_port << std::endl;
-    }
-
     m_tcpClient->connect(m_host, m_port);
 }
 
@@ -350,10 +344,7 @@ void PcapService::sendPacketData(const PacketData &packet)
     // Send data
     if (!m_tcpClient->send(data))
     {
-        if (m_verbose)
-        {
-            std::cerr << "Failed to send packet data" << std::endl;
-        }
+        LOG_DEBUG("Failed to send packet data");
     }
 }
 
@@ -365,10 +356,7 @@ std::vector<std::string> PcapService::discoverNetworkInterfaces()
 
     if (pcap_findalldevs(&devices, errbuf) == -1)
     {
-        if (m_verbose)
-        {
-            std::cerr << "Error finding network devices: " << errbuf << std::endl;
-        }
+        LOG_ERROR("Error finding network devices: " + std::string(errbuf));
         return interfaces;
     }
 
@@ -391,14 +379,11 @@ std::vector<std::string> PcapService::discoverNetworkInterfaces()
               std::string(device->description).find("Bluetooth") != std::string::npos ||
               std::string(device->description).find("Adapter for loopback") != std::string::npos)))
         {
-            if (m_verbose && deviceName.length() > 0)
+            if (deviceName.length() > 0)
             {
-                std::cout << "Skipping interface: " << deviceName;
-                if (device->description)
-                {
-                    std::cout << " (" << device->description << ")";
-                }
-                std::cout << " - not a network interface" << std::endl;
+                std::string desc = device->description ? std::string(device->description) : "";
+                LOG_DEBUG("Skipping interface: " + deviceName +
+                          (desc.empty() ? "" : " (" + desc + ")") + " - not a network interface");
             }
             continue;
         }
@@ -422,23 +407,15 @@ std::vector<std::string> PcapService::discoverNetworkInterfaces()
         {
 
             interfaces.push_back(deviceName);
-            if (m_verbose)
-            {
-                std::cout << "Found suitable network interface: " << deviceName << std::endl;
-                if (device->description)
-                {
-                    std::cout << "  Description: " << device->description << std::endl;
-                }
-            }
+            std::string desc = device->description ? std::string(device->description) : "";
+            LOG_INFO("Found suitable network interface: " + deviceName +
+                     (desc.empty() ? "" : " (" + desc + ")"));
         }
-        else if (m_verbose && deviceName.length() > 0)
+        else if (deviceName.length() > 0)
         {
-            std::cout << "Skipping interface: " << deviceName;
-            if (device->description)
-            {
-                std::cout << " (" << device->description << ")";
-            }
-            std::cout << " - not a recognized network interface pattern" << std::endl;
+            std::string desc = device->description ? std::string(device->description) : "";
+            LOG_DEBUG("Skipping interface: " + deviceName +
+                      (desc.empty() ? "" : " (" + desc + ")") + " - not a recognized network interface pattern");
         }
     }
 
@@ -496,17 +473,11 @@ void PcapService::startCaptureThread(const std::string &interface)
     {
         m_captureThreads.push_back(std::move(captureThread));
         m_monitoredInterfaces.insert(interface);
-        if (m_verbose)
-        {
-            std::cout << "Started capture thread for new interface: " << interface << std::endl;
-        }
+        LOG_INFO("Started capture thread for new interface: " + interface);
     }
     else
     {
-        if (m_verbose)
-        {
-            std::cerr << "Failed to start capture on interface: " << interface << std::endl;
-        }
+        LOG_WARNING("Failed to start capture on interface: " + interface);
     }
 }
 
@@ -526,19 +497,13 @@ void PcapService::stopCaptureThread(const std::string &interface)
         m_captureThreads.erase(it, m_captureThreads.end());
         m_monitoredInterfaces.erase(interface);
 
-        if (m_verbose)
-        {
-            std::cout << "Stopped capture thread for interface: " << interface << std::endl;
-        }
+        LOG_INFO("Stopped capture thread for interface: " + interface);
     }
 }
 
 void PcapService::networkMonitorThreadFunction()
 {
-    if (m_verbose)
-    {
-        std::cout << "Network monitor thread started" << std::endl;
-    }
+    LOG_INFO("Network monitor thread started");
 
     const auto checkInterval = std::chrono::seconds(MONITOR_INTERVAL); // Check for interface changes
 
@@ -560,8 +525,5 @@ void PcapService::networkMonitorThreadFunction()
         }
     }
 
-    if (m_verbose)
-    {
-        std::cout << "Network monitor thread stopped" << std::endl;
-    }
+    LOG_INFO("Network monitor thread stopped");
 }

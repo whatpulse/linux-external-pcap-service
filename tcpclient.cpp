@@ -13,6 +13,7 @@
  */
 
 #include "tcpclient.h"
+#include "logger.h"
 #include <iostream>
 #include <cstring>
 #include <unistd.h>
@@ -40,14 +41,13 @@ bool TcpClient::connect(const std::string &host, uint16_t port)
   m_host = host;
   m_port = port;
 
+  Logger::getInstance().logConnectionAttempt(host, port);
+
   // Create socket
   m_socket = socket(AF_INET, SOCK_STREAM, 0);
   if (m_socket < 0)
   {
-    if (m_verbose)
-    {
-      std::cerr << "Failed to create socket: " << strerror(errno) << std::endl;
-    }
+    Logger::getInstance().logConnectionFailed(host, port, "Failed to create socket: " + std::string(strerror(errno)));
     return false;
   }
 
@@ -55,10 +55,7 @@ bool TcpClient::connect(const std::string &host, uint16_t port)
   struct hostent *hostInfo = gethostbyname(host.c_str());
   if (!hostInfo)
   {
-    if (m_verbose)
-    {
-      std::cerr << "Failed to resolve hostname: " << host << std::endl;
-    }
+    Logger::getInstance().logConnectionFailed(host, port, "Failed to resolve hostname: " + host);
     close(m_socket);
     m_socket = -1;
     return false;
@@ -74,20 +71,14 @@ bool TcpClient::connect(const std::string &host, uint16_t port)
   // Connect
   if (::connect(m_socket, reinterpret_cast<struct sockaddr *>(&serverAddr), sizeof(serverAddr)) < 0)
   {
-    if (m_verbose)
-    {
-      std::cerr << "Failed to connect to " << host << ":" << port << " - " << strerror(errno) << std::endl;
-    }
+    Logger::getInstance().logConnectionFailed(host, port, strerror(errno));
     close(m_socket);
     m_socket = -1;
     return false;
   }
 
   m_connected = true;
-  if (m_verbose)
-  {
-    std::cout << "Connected to " << host << ":" << port << std::endl;
-  }
+  Logger::getInstance().logConnectionSuccess(host, port);
 
   return true;
 }
@@ -102,9 +93,9 @@ void TcpClient::disconnect()
     m_socket = -1;
   }
 
-  if (m_connected && m_verbose)
+  if (m_connected)
   {
-    std::cout << "Disconnected from " << m_host << ":" << m_port << std::endl;
+    Logger::getInstance().logDisconnected(m_host, m_port);
   }
 
   m_connected = false;
@@ -133,10 +124,7 @@ bool TcpClient::send(const std::vector<uint8_t> &data)
     ssize_t sent = ::send(m_socket, dataPtr + totalSent, data.size() - totalSent, 0);
     if (sent < 0)
     {
-      if (m_verbose)
-      {
-        std::cerr << "Send failed: " << strerror(errno) << std::endl;
-      }
+      Logger::getInstance().logSendError(strerror(errno));
       m_connected = false;
       return false;
     }
