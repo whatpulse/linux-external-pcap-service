@@ -37,6 +37,7 @@ public:
   void setVerbose(bool verbose) { m_verbose = verbose; }
 
 private:
+  void forceDisconnect();
   int m_socket;
   bool m_connected;
   bool m_verbose;

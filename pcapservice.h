@@ -50,7 +50,7 @@ public:
 
 private:
     void connectToWhatPulse();
-    void sendPacketData(const PacketData &packet);
+    bool sendPacketData(const PacketData &packet);
     void networkThreadFunction();
     void networkMonitorThreadFunction();
 
