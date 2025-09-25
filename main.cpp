@@ -18,12 +18,19 @@
 #include <getopt.h>
 #include <signal.h>
 #include <unistd.h>
+#include <memory>
+#include <chrono>
+#include <thread>
 
-#include "pcapservice.h"
+#include "captureservice.h"
+#include "networkclient.h"
 #include "logger.h"
 
-// Global service instance for signal handler
-PcapService *g_service = nullptr;
+#define PCAP_SERVICE_VERSION "1.0.1"
+
+// Global service instances for signal handler
+std::unique_ptr<CaptureService> g_captureService = nullptr;
+std::unique_ptr<NetworkClient> g_networkClient = nullptr;
 
 void printUsage(const char *programName)
 {
@@ -51,11 +58,15 @@ void printVersion()
 void signalHandler(int signum)
 {
     LOG_INFO("Received signal " + std::to_string(signum) + ", shutting down gracefully...");
-    if (g_service)
+    if (g_captureService)
     {
-        g_service->stop();
+        g_captureService->stop();
     }
-    // Exit immediately after stopping the service
+    if (g_networkClient)
+    {
+        g_networkClient->stop();
+    }
+    // Exit immediately after stopping the services
     exit(0);
 }
 
@@ -120,39 +131,61 @@ int main(int argc, char *argv[])
     }
 
     // Initialize logging system
-    LogLevel logLevel = debug ? LogLevel::DEBUG : LogLevel::INFO;
+    Logger::LogLevel logLevel = debug ? Logger::LogLevel::VERBOSE : Logger::LogLevel::INFO;
     Logger::getInstance().initialize(logFile, logLevel, verbose);
 
     LOG_INFO("WhatPulse PCap Service v" + std::string(PCAP_SERVICE_VERSION) + " starting...");
     LOG_INFO("Target host: " + host);
     LOG_INFO("Target port: " + std::to_string(port));
     LOG_INFO("Interface: " + (interface.empty() ? "all" : interface));
-    LOG_INFO("Log level: " + std::string(debug ? "DEBUG" : "INFO"));
+    LOG_INFO("Log level: " + std::string(debug ? "VERBOSE" : "INFO"));
     LOG_INFO("Verbose mode: " + std::string(verbose ? "enabled" : "disabled"));
 
     // Set up signal handlers for graceful shutdown
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
 
-    PcapService service;
-    g_service = &service;
-
-    if (!service.initialize(host, port, interface, verbose))
+    // Initialize network client for WhatPulse communication
+    g_networkClient = std::make_unique<NetworkClient>();
+    if (!g_networkClient->initialize(host, port, verbose))
     {
-        LOG_ERROR("Failed to initialize PCap service");
+        LOG_ERROR("Failed to initialize network client");
         return 1;
     }
 
-    if (!service.start())
+    if (!g_networkClient->start())
     {
-        LOG_ERROR("Failed to start PCap service");
+        LOG_ERROR("Failed to start network client");
+        return 1;
+    }
+
+    // Initialize capture service
+    g_captureService = std::make_unique<CaptureService>();
+    
+    // Create callback that forwards packets to network client
+    auto packetCallback = [&](const PacketData& packet) {
+        g_networkClient->queuePacket(packet);
+    };
+
+    if (!g_captureService->initialize(interface, verbose, packetCallback))
+    {
+        LOG_ERROR("Failed to initialize capture service");
+        return 1;
+    }
+
+    if (!g_captureService->start())
+    {
+        LOG_ERROR("Failed to start capture service");
         return 1;
     }
 
     LOG_INFO("Service started successfully. Press Ctrl+C to stop.");
 
-    // Keep the service running
-    service.run();
+    // Keep the services running
+    while (true)
+    {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
 
     return 0;
 }
