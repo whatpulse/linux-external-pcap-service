@@ -111,6 +111,73 @@ sudo systemctl status whatpulse-pcap-service
 
 The service will automatically connect to WhatPulse when both are running. No additional WhatPulse configuration is needed in most cases.
 
+## Upgrading
+
+### Package Manager Upgrade
+
+If you installed via package manager, upgrading is straightforward:
+
+#### Debian/Ubuntu
+```bash
+# Download the new .deb package from releases, then:
+sudo dpkg -i whatpulse-pcap-service_*_amd64.deb
+sudo apt-get install -f  # Fix any dependencies if needed
+
+# Or if added to a repository:
+sudo apt-get update && sudo apt-get upgrade whatpulse-pcap-service
+```
+
+#### Red Hat/Fedora/CentOS
+```bash
+# Download the new .rpm package from releases, then:
+sudo rpm -Uvh whatpulse-pcap-service-*-1.x86_64.rpm
+# OR on Fedora/newer systems:
+sudo dnf upgrade whatpulse-pcap-service-*-1.x86_64.rpm
+```
+
+#### Arch Linux
+```bash
+# Download the new package from releases, then:
+sudo pacman -U whatpulse-pcap-service-*-1-x86_64.pkg.tar.*
+```
+
+### Manual/Source Upgrade
+
+For manual installations, follow these steps:
+
+```bash
+# Stop the service
+sudo systemctl stop whatpulse-pcap-service
+
+# Download and extract the new source
+tar xzf whatpulse-pcap-service-*-source.tar.gz
+cd whatpulse-pcap-service-*
+
+# Build and install
+make
+sudo make install
+
+# Restart the service
+sudo systemctl start whatpulse-pcap-service
+
+# Verify the upgrade
+sudo systemctl status whatpulse-pcap-service
+```
+
+### Checking Version
+
+To verify which version is currently installed:
+
+```bash
+# Check the service version
+whatpulse-pcap-service --version
+
+# Or check systemd service status
+sudo systemctl status whatpulse-pcap-service
+```
+
+**Note:** The service may need to be restarted after upgrading to ensure the new version is running. Package manager installations typically handle this automatically, but manual installations may require a manual restart.
+
 ## Troubleshooting
 
 ### Check Service Status
