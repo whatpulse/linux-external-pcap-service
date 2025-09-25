@@ -65,7 +65,7 @@ jobs:
 
       - name: Verify version matches source code
         run: |
-          SOURCE_VERSION=$(grep '#define PCAP_SERVICE_VERSION ' pcapservice.h | awk -F '"' '{print $2}')
+          SOURCE_VERSION=$(grep '#define PCAP_SERVICE_VERSION ' main.cpp | awk -F '"' '{print $2}')
 
           echo "Source code version: $SOURCE_VERSION"
           echo "Build version: ${{ steps.version.outputs.version }}"
@@ -75,7 +75,7 @@ jobs:
             echo "Source code defines version: $SOURCE_VERSION"
             echo "Tag/input specifies version: ${{ steps.version.outputs.version }}"
             echo ""
-            echo "Please update the PCAP_SERVICE_VERSION in pcapservice.h to match the tag version,"
+            echo "Please update the PCAP_SERVICE_VERSION in main.cpp to match the tag version,"
             echo "or use the correct tag that matches the source code version."
             exit 1
           fi

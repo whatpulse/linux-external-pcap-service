@@ -53,13 +53,13 @@ echo "🚀 Preparing External PCap Service release v$VERSION"
 echo ""
 
 # Check if we're in the right directory
-if [ ! -f "pcapservice.h" ]; then
+if [ ! -f "main.cpp" ]; then
     echo "Error: Please run this script from the repository root"
     exit 1
 fi
 
 # Get current version from source
-CURRENT_VERSION=$(grep '#define PCAP_SERVICE_VERSION ' pcapservice.h | awk -F '"' '{print $2}')
+CURRENT_VERSION=$(grep '#define PCAP_SERVICE_VERSION ' main.cpp | awk -F '"' '{print $2}')
 echo "Current version in source: $CURRENT_VERSION"
 echo "Target version: $VERSION"
 
@@ -71,15 +71,15 @@ elif [ "$CURRENT_VERSION" = "$VERSION" ] && [ -n "$FORCE_FLAG" ]; then
     echo "⚠️  Version is already set to $VERSION in source code (--force specified, continuing)"
 else
     echo "📝 Updating version in source code..."
-    sed -i.bak "s/#define PCAP_SERVICE_VERSION \".*\"/#define PCAP_SERVICE_VERSION \"$VERSION\"/" pcapservice.h
-    rm pcapservice.h.bak
+    sed -i.bak "s/#define PCAP_SERVICE_VERSION \".*\"/#define PCAP_SERVICE_VERSION \"$VERSION\"/" main.cpp
+    rm main.cpp.bak
     echo "✅ Updated PCAP_SERVICE_VERSION to $VERSION"
 fi
 
 # Check if there are uncommitted changes
-if ! git diff --quiet pcapservice.h; then
+if ! git diff --quiet main.cpp; then
     echo "📦 Committing version update..."
-    git add pcapservice.h
+    git add main.cpp
     if [ -n "$FORCE_FLAG" ]; then
         # Force commit even if there might be conflicts
         git commit -m "bump version to $VERSION" || git commit --amend -m "bump version to $VERSION"

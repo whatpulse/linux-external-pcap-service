@@ -256,13 +256,13 @@ Releases are automated via GitHub Actions. Follow these steps to create a new re
 
 **Update version:**
 ```bash
-# Edit pcapservice.h
+# Edit main.cpp
 # Change PCAP_SERVICE_VERSION to your new version (e.g., "1.0.1")
 ```
 
 **Commit and push changes:**
 ```bash
-git add pcapservice.h
+git add main.cpp
 git commit -m "bump version to 1.0.1"
 git push origin master
 ```
