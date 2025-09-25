@@ -2,7 +2,7 @@ CC=g++
 CFLAGS=-std=c++17 -Wall -Wextra -O2 -pthread
 LDFLAGS=-lpcap -pthread
 TARGET=whatpulse-pcap-service
-SOURCES=main.cpp pcapservice.cpp tcpclient.cpp pcapcapturethread.cpp logger.cpp
+SOURCES=main.cpp captureservice.cpp networkclient.cpp tcpclient.cpp pcapcapturethread.cpp pfringcapturethread.cpp logger.cpp
 VERSION=1.0.2
 
 # Default target
@@ -12,7 +12,9 @@ $(TARGET): $(SOURCES)
 	$(CC) $(CFLAGS) -o $(TARGET) $(SOURCES) $(LDFLAGS)
 
 # Debug build
-debug: CFLAGS += -g -DDEBUG
+debug: CFLAGS = -std=c++17 -Wall -Wextra -g -O0 -DDEBUG -pthread -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined
+debug: LDFLAGS = -lpcap -pthread -fsanitize=address -fsanitize=undefined
+debug: TARGET := $(TARGET)-debug
 debug: $(TARGET)
 
 # Static build (most portable - for universal distribution)

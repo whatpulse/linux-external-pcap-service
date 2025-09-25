@@ -6,7 +6,7 @@ A companion service that enables network monitoring for WhatPulse when running i
 
 When WhatPulse runs as an AppImage or in other restricted environments, it may not have direct access to capture network packets. This service runs alongside WhatPulse to provide network monitoring capabilities by:
 
-- Capturing network traffic using system-level access
+- Capturing network traffic using high-performance PF_RING or traditional PCap
 - Filtering and processing packet data safely
 - Forwarding relevant statistics to WhatPulse via local connection
 
@@ -119,7 +119,7 @@ The service will automatically connect to WhatPulse when both are running. No ad
 sudo systemctl status whatpulse-pcap-service
 
 # View recent logs
-sudo journalctl -u whatpulse-pcap-service -f
+sudo tail /var/log/whatpulse-pcap.log
 ```
 
 ### Common Issues

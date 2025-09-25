@@ -21,25 +21,25 @@
 #include <chrono>
 #include <iomanip>
 
-enum class LogLevel
-{
-  DEBUG = 0,
-  INFO = 1,
-  WARNING = 2,
-  ERROR = 3
-};
-
 class Logger
 {
 public:
   static Logger &getInstance();
+
+  enum class LogLevel
+  {
+    VERBOSE = 0,
+    INFO = 1,
+    WARNING = 2,
+    ERROR = 3
+  };
 
   void initialize(const std::string &logFile, LogLevel level = LogLevel::INFO, bool verbose = false);
   void setLevel(LogLevel level) { m_level = level; }
   void setVerbose(bool verbose) { m_verbose = verbose; }
 
   void log(LogLevel level, const std::string &message);
-  void debug(const std::string &message) { log(LogLevel::DEBUG, message); }
+  void debug(const std::string &message) { log(LogLevel::VERBOSE, message); }
   void info(const std::string &message) { log(LogLevel::INFO, message); }
   void warning(const std::string &message) { log(LogLevel::WARNING, message); }
   void error(const std::string &message) { log(LogLevel::ERROR, message); }

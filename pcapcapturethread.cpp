@@ -13,9 +13,11 @@
  */
 
 #include "pcapcapturethread.h"
-#include "pcapservice.h"
+#include "packethandler.h"
 #include "logger.h"
 #include <iostream>
+#include <iomanip>
+#include <sstream>
 #include <cstring>
 #include <chrono>
 #include <net/ethernet.h>
@@ -30,14 +32,14 @@
 // Performance optimization constants (matching built-in PCap monitor)
 #define DEFAULT_SNAPLEN 9000
 
-PcapCaptureThread::PcapCaptureThread(const std::string &interface, bool verbose, PcapService *service)
+PcapCaptureThread::PcapCaptureThread(const std::string &interface, bool verbose, IPacketHandler *handler)
 {
   m_interface = interface;
   m_verbose = verbose;
   m_capturing = false;
   m_shouldStop = false;
   m_pcapHandle = nullptr;
-  m_service = service;
+  m_handler = handler;
 }
 
 PcapCaptureThread::~PcapCaptureThread()
@@ -197,9 +199,24 @@ void PcapCaptureThread::handlePacket(const struct pcap_pkthdr *header, const u_c
 
   packetData.packetData.assign(ipPacket, ipPacket + ipPacketLength);
 
-  // Send to service
-  if (m_service)
+  // Debug logging for PCap packets
+  if (m_verbose && ipPacketLength >= 4)
   {
-    m_service->onPacketCaptured(packetData);
+      std::stringstream debug;
+      debug << "PCAP [" << m_interface << "] Captured IPv" << static_cast<int>(ipVersion)
+            << " packet - TotalLen: " << header->caplen 
+            << ", IPLen: " << ipPacketLength
+            << ", IPHeader: 0x";
+      for (size_t i = 0; i < std::min(static_cast<size_t>(4), static_cast<size_t>(ipPacketLength)); i++)
+      {
+          debug << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(ipPacket[i]);
+      }
+      LOG_DEBUG(debug.str());
+  }
+
+  // Send to handler
+  if (m_handler)
+  {
+    m_handler->onPacketCaptured(packetData);
   }
 }

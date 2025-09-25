@@ -157,8 +157,8 @@ std::string Logger::levelToString(LogLevel level)
 {
   switch (level)
   {
-  case LogLevel::DEBUG:
-    return "DEBUG";
+  case LogLevel::VERBOSE:
+    return "VERBOSE";
   case LogLevel::INFO:
     return "INFO";
   case LogLevel::WARNING:

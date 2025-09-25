@@ -25,7 +25,7 @@
 #include <pcap/pcap.h>
 
 // Forward declarations
-class PcapService;
+class IPacketHandler;
 
 /**
  * Structure for packet data transmission
@@ -47,7 +47,7 @@ struct PacketData
 class PcapCaptureThread
 {
 public:
-  explicit PcapCaptureThread(const std::string &interface, bool verbose, PcapService *service);
+  explicit PcapCaptureThread(const std::string &interface, bool verbose, IPacketHandler *handler);
   ~PcapCaptureThread();
 
   void start();
@@ -68,7 +68,7 @@ private:
 
   pcap_t *m_pcapHandle;
   std::unique_ptr<std::thread> m_thread;
-  PcapService *m_service;
+  IPacketHandler *m_handler;
 
   mutable std::mutex m_mutex;
 };

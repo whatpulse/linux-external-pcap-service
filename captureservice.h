@@ -1,5 +1,5 @@
 /*
- * WhatPulse External PCap Service - Header Definitions
+ * WhatPulse External PCap Service - Capture Service
  *
  * Copyright (c) 2025 WhatPulse. All rights reserved.
  *
@@ -12,77 +12,77 @@
  * For licensing questions: support@whatpulse.org
  */
 
-#ifndef PCAPSERVICE_H
-#define PCAPSERVICE_H
+#ifndef CAPTURESERVICE_H
+#define CAPTURESERVICE_H
 
-#include "tcpclient.h"
 #include "pcapcapturethread.h"
+#include "pfringcapturethread.h"
+#include "packethandler.h"
 #include <string>
 #include <vector>
 #include <memory>
 #include <thread>
 #include <mutex>
 #include <atomic>
-#include <condition_variable>
-#include <queue>
 #include <set>
-#include <cstdint>
-
-#define PCAP_SERVICE_VERSION "1.0.1"
+#include <functional>
 
 /**
- * Main service class that manages PCap capture and network communication
+ * Callback function type for packet capture
  */
-class PcapService
+using PacketCallback = std::function<void(const PacketData&)>;
+
+/**
+ * Manages packet capture threads and interface monitoring
+ * Separated from network communication concerns
+ */
+class CaptureService : public IPacketHandler
 {
 public:
-    PcapService();
-    ~PcapService();
+    CaptureService();
+    ~CaptureService();
 
-    bool initialize(const std::string &host, uint16_t port,
-                    const std::string &interface = "", bool verbose = false);
+    bool initialize(const std::string &interface, bool verbose, PacketCallback callback);
     bool start();
     void stop();
-    void run(); // Main run loop
 
     // Called by capture threads when a packet is captured
     void onPacketCaptured(const PacketData &packet);
 
 private:
-    void connectToWhatPulse();
-    bool sendPacketData(const PacketData &packet);
-    void networkThreadFunction();
-    void networkMonitorThreadFunction();
-
     // Network interface discovery and monitoring
     std::vector<std::string> discoverNetworkInterfaces();
     void updateCaptureThreads(const std::vector<std::string> &currentInterfaces);
     void startCaptureThread(const std::string &interface);
     void stopCaptureThread(const std::string &interface);
+    void networkMonitorThreadFunction();
+    
+    // PF_RING specific methods
+    bool startPfRingCaptureThread(const std::string &interface);
+    void stopPfRingCaptureThread(const std::string &interface);
+    void stopAllCaptureThreads();
 
-    std::string m_host;
-    uint16_t m_port;
     std::string m_interface;
     bool m_verbose;
     std::atomic<bool> m_running;
+    PacketCallback m_packetCallback;
 
-    std::unique_ptr<TcpClient> m_tcpClient;
     std::vector<std::unique_ptr<PcapCaptureThread>> m_captureThreads;
+    std::vector<std::unique_ptr<PfRingCaptureThread>> m_pfringCaptureThreads;
+
+    // Capture method preference
+    bool m_preferPfRing;
+    bool m_pfRingSupported;
 
     // Track monitored interfaces
     std::set<std::string> m_monitoredInterfaces;
     std::mutex m_interfacesMutex;
 
-    // Packet queue for thread-safe communication
-    std::queue<PacketData> m_packetQueue;
-    std::mutex m_queueMutex;
-    std::condition_variable m_queueCondition;
-
-    // Network thread for handling TCP communication
-    std::unique_ptr<std::thread> m_networkThread;
-
     // Network monitor thread for detecting interface changes
     std::unique_ptr<std::thread> m_networkMonitorThread;
+
+    // Performance optimization constants (matching built-in PCap monitor)
+    static constexpr int MONITOR_INTERVAL = 300; // Seconds between interface checks (5 minutes)
 };
 
-#endif // PCAPSERVICE_H
+#endif // CAPTURESERVICE_H
