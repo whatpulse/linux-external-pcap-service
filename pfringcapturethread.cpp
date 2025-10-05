@@ -279,7 +279,7 @@ void PfRingCaptureThread::run()
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_lastStatsReport);
         
-        int reportInterval = m_verbose ? 10 : 30;
+        int reportInterval = m_verbose ? 10 : 300; // 10s if verbose, else 5min
         if (elapsed.count() >= reportInterval && (m_packetsProcessed.load() > 0 || m_packetsDropped.load() > 0))
         {
             uint64_t packets = m_packetsProcessed.exchange(0);

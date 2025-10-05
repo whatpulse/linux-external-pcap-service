@@ -48,7 +48,8 @@ public:
 private:
     void networkThreadFunction();
     void connectToWhatPulse();
-    bool sendPacketData(const PacketData &packet);
+    bool sendBatchedPackets(const std::vector<PacketData> &batch);
+    void flushBatch();
 
     std::string m_host;
     uint16_t m_port;
@@ -57,8 +58,19 @@ private:
 
     std::unique_ptr<TcpClient> m_tcpClient;
 
-    // Packet queue for thread-safe communication
-    std::queue<PacketData> m_packetQueue;
+    // Batching configuration
+    static constexpr auto BATCH_FLUSH_INTERVAL = std::chrono::milliseconds(1000);
+    static constexpr size_t MAX_BATCH_SIZE_BYTES = 16 * 1024 * 1024; // 16MB max batch
+    static constexpr size_t MAX_BATCH_PACKET_COUNT = 50000; // Max packets per batch
+
+    // Batching state
+    std::vector<PacketData> m_batchBuffer;
+    size_t m_batchSizeBytes;
+    std::chrono::steady_clock::time_point m_lastFlush;
+    std::mutex m_batchMutex;
+
+    // Batch queue for thread-safe communication
+    std::queue<std::vector<PacketData>> m_packetQueue;
     std::mutex m_queueMutex;
     std::condition_variable m_queueCondition;
 

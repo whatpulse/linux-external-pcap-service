@@ -162,13 +162,12 @@ void TcpClient::forceDisconnect()
     close(m_socket);
     m_socket = -1;
   }
-  
+
   if (m_connected)
   {
     Logger::getInstance().logDisconnected(m_host, m_port);
+    m_connected = false;
   }
-  
-  m_connected = false;
 }
 
 bool TcpClient::send(const std::vector<uint8_t> &data)
