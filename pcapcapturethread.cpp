@@ -164,6 +164,12 @@ void PcapCaptureThread::handlePacket(const struct pcap_pkthdr *header, const u_c
     return;
   }
 
+  // Basic validation
+  if (!header || !packet || header->caplen < sizeof(struct ether_header) || header->caplen > 65535)
+  {
+    return;
+  }
+
   // Parse Ethernet header
   const struct ether_header *ethHeader = reinterpret_cast<const struct ether_header *>(packet);
 
@@ -197,7 +203,20 @@ void PcapCaptureThread::handlePacket(const struct pcap_pkthdr *header, const u_c
   const u_char *ipPacket = packet + sizeof(struct ether_header);
   uint32_t ipPacketLength = header->caplen - sizeof(struct ether_header);
 
-  packetData.packetData.assign(ipPacket, ipPacket + ipPacketLength);
+  // Bounds checking for vector assignment
+  if (ipPacketLength > 0 && ipPacketLength <= 65535)
+  {
+    try {
+      packetData.packetData.reserve(ipPacketLength);
+      packetData.packetData.assign(ipPacket, ipPacket + ipPacketLength);
+    } catch (const std::exception& e) {
+      return; // Drop packet on exception
+    }
+  }
+  else
+  {
+    return; // Invalid packet length
+  }
 
   // Debug logging for PCap packets
   if (m_verbose && ipPacketLength >= 4)

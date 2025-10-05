@@ -28,7 +28,7 @@ TcpClient::TcpClient() : m_socket(-1), m_connected(false), m_verbose(false), m_p
 
 TcpClient::~TcpClient()
 {
-  disconnect();
+  forceDisconnect();
 }
 
 bool TcpClient::connect(const std::string &host, uint16_t port)
@@ -37,7 +37,7 @@ bool TcpClient::connect(const std::string &host, uint16_t port)
 
   if (m_connected)
   {
-    disconnect();
+    forceDisconnect();
   }
 
   m_host = host;
@@ -125,15 +125,30 @@ bool TcpClient::isConnected() const
     return false;
   }
   
-  // Check if socket is still valid using a non-blocking test
+  // Check socket error state
   int error = 0;
   socklen_t len = sizeof(error);
-  int result = getsockopt(m_socket, SOL_SOCKET, SO_ERROR, &error, &len);
-  
-  if (result != 0 || error != 0)
+  if (getsockopt(m_socket, SOL_SOCKET, SO_ERROR, &error, &len) != 0 || error != 0)
   {
-    // Socket has an error, connection is not valid
     return false;
+  }
+  
+  // Perform a non-blocking recv to detect if peer closed connection
+  char dummy;
+  ssize_t result = recv(m_socket, &dummy, 1, MSG_PEEK | MSG_DONTWAIT);
+  
+  if (result == 0)
+  {
+    // Connection closed by peer
+    return false;
+  }
+  else if (result < 0)
+  {
+    if (errno == ECONNRESET || errno == ENOTCONN || errno == EPIPE)
+    {
+      // Connection is broken
+      return false;
+    }
   }
   
   return true;

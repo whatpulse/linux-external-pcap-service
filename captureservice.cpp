@@ -84,17 +84,35 @@ bool CaptureService::start()
         return false;
     }
 
-    // Start capture threads for initial interfaces
-    updateCaptureThreads(interfaces);
-
-    if (m_captureThreads.empty() && m_pfringCaptureThreads.empty())
+    // Try to start global PF_RING thread first
+    bool pfRingStarted = false;
+    if (m_preferPfRing && m_pfRingSupported)
     {
-        LOG_ERROR("Failed to start any capture threads");
-        return false;
+        pfRingStarted = startGlobalPfRingThread();
+        if (pfRingStarted)
+        {
+            LOG_INFO("Started global PF_RING capture thread (captures all interfaces)");
+        }
+        else
+        {
+            LOG_WARNING("Failed to start global PF_RING, falling back to per-interface PCap");
+        }
     }
 
-    // Start network monitoring thread (only if auto-discovering interfaces)
-    if (m_interface.empty())
+    // If PF_RING failed or not preferred, start per-interface PCap threads
+    if (!pfRingStarted)
+    {
+        updateCaptureThreads(interfaces);
+        
+        if (m_captureThreads.empty())
+        {
+            LOG_ERROR("Failed to start any capture threads");
+            return false;
+        }
+    }
+
+    // Start network monitoring thread (only if using PCap and auto-discovering interfaces)
+    if (!pfRingStarted && m_interface.empty())
     {
         m_networkMonitorThread = std::make_unique<std::thread>(&CaptureService::networkMonitorThreadFunction, this);
     }
@@ -121,18 +139,20 @@ void CaptureService::stop()
         m_networkMonitorThread->join();
     }
 
-    // Wait for capture threads to finish
+    // Wait for PCap threads to finish
     for (auto &thread : m_captureThreads)
     {
         thread->join();
     }
-    for (auto &thread : m_pfringCaptureThreads)
+
+    // Wait for global PF_RING thread to finish
+    if (m_globalPfRingThread)
     {
-        thread->join();
+        m_globalPfRingThread->join();
     }
 
     m_captureThreads.clear();
-    m_pfringCaptureThreads.clear();
+    m_globalPfRingThread.reset();
     m_monitoredInterfaces.clear();
 
     LOG_INFO("Capture service stopped");
@@ -229,7 +249,8 @@ void CaptureService::updateCaptureThreads(const std::vector<std::string> &curren
 
 void CaptureService::startCaptureThread(const std::string &interface)
 {
-    // Check if we already have a thread for this interface (either PF_RING or PCap)
+    // Check if we already have a PCap thread for this interface 
+    // (PF_RING is now global and doesn't need per-interface checking)
     for (const auto &thread : m_captureThreads)
     {
         if (thread->interfaceName() == interface)
@@ -237,33 +258,11 @@ void CaptureService::startCaptureThread(const std::string &interface)
             return; // Already monitoring this interface
         }
     }
-    for (const auto &thread : m_pfringCaptureThreads)
-    {
-        if (thread->interfaceName() == interface)
-        {
-            return; // Already monitoring this interface
-        }
-    }
 
+    // Only start PCap threads now (PF_RING is handled globally)
     bool success = false;
-
-    // Try PF_RING first if supported and preferred
-    if (m_preferPfRing && m_pfRingSupported)
-    {
-        success = startPfRingCaptureThread(interface);
-        if (success)
-        {
-            LOG_INFO("Started PF_RING capture thread for interface: " + interface);
-        }
-        else
-        {
-            LOG_WARNING("Failed to start PF_RING capture for " + interface + ", falling back to PCap");
-        }
-    }
-
-    // Fall back to PCap if PF_RING failed or not preferred
-    if (!success)
-    {
+    
+    try {
         auto pcapThread = std::make_unique<PcapCaptureThread>(interface, m_verbose, this);
         pcapThread->start();
 
@@ -276,11 +275,13 @@ void CaptureService::startCaptureThread(const std::string &interface)
             success = true;
             LOG_INFO("Started PCap capture thread for interface: " + interface);
         }
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception starting PCap for " + interface + ": " + std::string(e.what()));
     }
 
     if (!success)
     {
-        LOG_ERROR("Failed to start capture thread for interface: " + interface);
+        LOG_ERROR("Failed to start PCap thread for interface: " + interface);
     }
 }
 
@@ -288,10 +289,7 @@ void CaptureService::stopCaptureThread(const std::string &interface)
 {
     bool stopped = false;
 
-    // Try to stop PF_RING thread first
-    stopPfRingCaptureThread(interface);
-
-    // Try to stop PCap thread
+    // Only handle PCap threads (PF_RING is global)
     auto it = std::remove_if(m_captureThreads.begin(), m_captureThreads.end(),
                              [&interface](const std::unique_ptr<PcapCaptureThread> &thread)
                              {
@@ -307,7 +305,7 @@ void CaptureService::stopCaptureThread(const std::string &interface)
 
     if (stopped)
     {
-        LOG_INFO("Stopped capture thread for interface: " + interface);
+        LOG_INFO("Stopped PCap thread for interface: " + interface);
     }
 }
 
@@ -334,45 +332,50 @@ void CaptureService::networkMonitorThreadFunction()
     LOG_INFO("Network monitor thread stopped");
 }
 
-bool CaptureService::startPfRingCaptureThread(const std::string &interface)
+
+bool CaptureService::startGlobalPfRingThread()
 {
-    auto pfringThread = std::make_unique<PfRingCaptureThread>(interface, m_verbose, this);
-    pfringThread->start();
-
-    // Give thread a moment to initialize
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-    if (pfringThread->isCapturing() && pfringThread->isReady())
+    if (m_globalPfRingThread)
     {
-        m_pfringCaptureThreads.push_back(std::move(pfringThread));
-        return true;
+        return true; // Already started
     }
 
-    return false;
+    try {
+        // Create global PF_RING thread with empty interface name (captures all)
+        m_globalPfRingThread = std::make_unique<PfRingCaptureThread>(m_verbose, this);
+        m_globalPfRingThread->start();
+
+        // Give thread a moment to initialize
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+        if (m_globalPfRingThread->isCapturing() && m_globalPfRingThread->isReady())
+        {
+            return true;
+        }
+        else
+        {
+            m_globalPfRingThread.reset();
+            return false;
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception starting global PF_RING thread: " + std::string(e.what()));
+        m_globalPfRingThread.reset();
+        return false;
+    }
 }
 
-void CaptureService::stopPfRingCaptureThread(const std::string &interface)
+void CaptureService::stopGlobalPfRingThread()
 {
-    auto it = std::remove_if(m_pfringCaptureThreads.begin(), m_pfringCaptureThreads.end(),
-                             [&interface](const std::unique_ptr<PfRingCaptureThread> &thread)
-                             {
-                                 return thread->interfaceName() == interface;
-                             });
-
-    if (it != m_pfringCaptureThreads.end())
+    if (m_globalPfRingThread)
     {
-        (*it)->stop();
-        m_pfringCaptureThreads.erase(it, m_pfringCaptureThreads.end());
+        m_globalPfRingThread->stop();
     }
 }
 
 void CaptureService::stopAllCaptureThreads()
 {
-    // Stop all PF_RING threads
-    for (auto &thread : m_pfringCaptureThreads)
-    {
-        thread->stop();
-    }
+    // Stop global PF_RING thread
+    stopGlobalPfRingThread();
 
     // Stop all PCap threads
     for (auto &thread : m_captureThreads)

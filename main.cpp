@@ -32,6 +32,9 @@
 std::unique_ptr<CaptureService> g_captureService = nullptr;
 std::unique_ptr<NetworkClient> g_networkClient = nullptr;
 
+// Global shutdown flag for async-signal-safe shutdown
+volatile sig_atomic_t g_shutdownRequested = 0;
+
 void printUsage(const char *programName)
 {
     std::cout << "WhatPulse PCap Service v" << PCAP_SERVICE_VERSION << "\n\n";
@@ -57,17 +60,9 @@ void printVersion()
 
 void signalHandler(int signum)
 {
-    LOG_INFO("Received signal " + std::to_string(signum) + ", shutting down gracefully...");
-    if (g_captureService)
-    {
-        g_captureService->stop();
-    }
-    if (g_networkClient)
-    {
-        g_networkClient->stop();
-    }
-    // Exit immediately after stopping the services
-    exit(0);
+    // Only async-signal-safe operations in signal handler
+    (void)signum; // Suppress unused parameter warning
+    g_shutdownRequested = 1;
 }
 
 int main(int argc, char *argv[])
@@ -181,11 +176,23 @@ int main(int argc, char *argv[])
 
     LOG_INFO("Service started successfully. Press Ctrl+C to stop.");
 
-    // Keep the services running
-    while (true)
+    // Keep the services running until shutdown requested
+    while (!g_shutdownRequested)
     {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
+
+    // Graceful shutdown
+    LOG_INFO("Shutdown requested, stopping services...");
+    if (g_captureService)
+    {
+        g_captureService->stop();
+    }
+    if (g_networkClient)
+    {
+        g_networkClient->stop();
+    }
+    LOG_INFO("Services stopped successfully");
 
     return 0;
 }

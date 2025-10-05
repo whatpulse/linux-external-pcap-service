@@ -41,8 +41,8 @@
 #define PFRING_BLOCK_SIZE (PFRING_FRAME_COUNT * PFRING_FRAME_SIZE)
 #define PFRING_BLOCK_COUNT 1
 
-PfRingCaptureThread::PfRingCaptureThread(const std::string &interface, bool verbose, IPacketHandler *handler)
-    : m_interface(interface), m_verbose(verbose), m_capturing(false), m_shouldStop(false), 
+PfRingCaptureThread::PfRingCaptureThread(bool verbose, IPacketHandler *handler)
+    : m_verbose(verbose), m_capturing(false), m_shouldStop(false), 
       m_ready(false), m_socket(-1), m_map(nullptr), m_ring(nullptr), m_frameIndex(0),
       m_packetsProcessed(0), m_bytesProcessed(0), m_packetsDropped(0),
       m_lastStatsReport(std::chrono::steady_clock::now()), m_handler(handler)
@@ -71,7 +71,7 @@ void PfRingCaptureThread::start()
 {
     if (!initializePfRing())
     {
-        LOG_ERROR("Failed to initialize PF_RING for interface: " + m_interface);
+        LOG_ERROR("Failed to initialize PF_RING");
         return;
     }
 
@@ -96,13 +96,14 @@ void PfRingCaptureThread::join()
 
 bool PfRingCaptureThread::initializePfRing()
 {
-    LOG_INFO("Initializing PF_RING for interface: " + m_interface);
+    LOG_INFO("Initializing PF_RING");
 
     // Create PF_PACKET socket - EXACTLY like working code
     m_socket = socket(PF_PACKET, SOCK_RAW, 0);  // Use 0 instead of htons(ETH_P_ALL) initially
     if (m_socket < 0)
     {
-        LOG_ERROR("Failed to create PF_PACKET socket for " + m_interface + ": " + strerror(errno));
+        LOG_ERROR("Failed to create PF_PACKET socket:");
+        LOG_ERROR(strerror(errno));
         return false;
     }
 
@@ -115,7 +116,8 @@ bool PfRingCaptureThread::initializePfRing()
     // Set socket option for RX ring
     if (setsockopt(m_socket, SOL_PACKET, PACKET_RX_RING, &m_req, sizeof(m_req)) != 0)
     {
-        LOG_ERROR("Failed to set PACKET_RX_RING for " + m_interface + ": " + strerror(errno));
+        LOG_ERROR("Failed to set PACKET_RX_RING:");
+        LOG_ERROR(strerror(errno));
         close(m_socket);
         m_socket = -1;
         return false;
@@ -126,14 +128,15 @@ bool PfRingCaptureThread::initializePfRing()
                                     PROT_READ | PROT_WRITE, MAP_SHARED, m_socket, 0));
     if (m_map == MAP_FAILED)
     {
-        LOG_ERROR("Failed to mmap ring buffer for " + m_interface + ": " + strerror(errno));
+        LOG_ERROR("Failed to mmap ring buffer:");
+        LOG_ERROR(strerror(errno));
         close(m_socket);
         m_socket = -1;
         m_map = nullptr;
         return false;
     }
 
-    // Setup ring buffer structure - EXACTLY like working code
+    // Setup ring buffer structure
     m_ring = static_cast<struct iovec*>(malloc(m_req.tp_frame_nr * sizeof(struct iovec)));
     for (unsigned int i = 0; i < m_req.tp_frame_nr; i++)
     {
@@ -141,19 +144,20 @@ bool PfRingCaptureThread::initializePfRing()
         m_ring[i].iov_len = m_req.tp_frame_size;
     }
 
-    // Bind to interface - EXACTLY like working code
+    // Bind to interface
     struct sockaddr_ll addr;
     memset(&addr, 0, sizeof(addr));
     addr.sll_family = AF_PACKET;
     addr.sll_protocol = htons(ETH_P_ALL);
-    addr.sll_ifindex = 0;  // Bind to ALL interfaces like working code
+    addr.sll_ifindex = 0;  // Bind to ALL interfaces
     addr.sll_hatype = 0;
     addr.sll_pkttype = 0;
     addr.sll_halen = 0;
 
     if (bind(m_socket, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0)
     {
-        LOG_ERROR("Failed to bind socket to interface " + m_interface + ": " + strerror(errno));
+        LOG_ERROR("Failed to bind socket:");
+        LOG_ERROR(strerror(errno));
         cleanupPfRing();
         return false;
     }
@@ -162,7 +166,7 @@ bool PfRingCaptureThread::initializePfRing()
     
     // Log ring buffer configuration
     std::stringstream ss;
-    ss << "PF_RING initialized successfully for interface: " << m_interface
+    ss << "PF_RING initialized successfully "
        << " - Ring buffer: " << m_req.tp_frame_nr << " frames x " << m_req.tp_frame_size 
        << " bytes = " << (m_req.tp_block_size / 1024) << " KB";
     LOG_INFO(ss.str());
@@ -191,79 +195,87 @@ void PfRingCaptureThread::cleanupPfRing()
     }
 }
 
-int PfRingCaptureThread::getInterfaceIndex(const std::string &interface)
-{
-    return if_nametoindex(interface.c_str());
-}
-
 void PfRingCaptureThread::run()
 {
     if (!m_ready)
     {
-        LOG_ERROR("PF_RING not ready for interface: " + m_interface);
+        LOG_ERROR("PF_RING not ready");
         return;
     }
 
-    LOG_INFO("PF_RING capture started on interface: " + m_interface);
+    LOG_INFO("PF_RING capture started");
     m_capturing.store(true);
 
     struct pollfd pfd;
     pfd.fd = m_socket;
     pfd.events = POLLIN | POLLERR;
 
-    unsigned int frameIndex = 0;  // Use local variable like working code
+    unsigned int frameIndex = 0; 
     const int pkt_offset = TPACKET_ALIGN(sizeof(struct tpacket_hdr)) + 
                           TPACKET_ALIGN(sizeof(struct sockaddr_ll));
 
     while (!m_shouldStop.load())
     {
-        // Process packets - EXACTLY like working code logic
-        while (*(unsigned long *)m_ring[frameIndex].iov_base && !m_shouldStop.load())
+        // Process packets
+        while (!m_shouldStop.load())
         {
             struct tpacket_hdr *header = static_cast<struct tpacket_hdr*>(m_ring[frameIndex].iov_base);
             
             // Check if frame has data (TP_STATUS_USER means userspace owns the frame)
-            if (header->tp_status & TP_STATUS_USER)
+            if (!(header->tp_status & TP_STATUS_USER))
             {
-                // Update performance counters
-                m_packetsProcessed.fetch_add(1);
-                m_bytesProcessed.fetch_add(header->tp_len);
+                break; // No more packets available
+            }
 
-                // Get socket address info
-                struct sockaddr_ll *sll = reinterpret_cast<struct sockaddr_ll*>(
-                    static_cast<char*>(m_ring[frameIndex].iov_base) + TPACKET_ALIGN(sizeof(struct tpacket_hdr)));
+            // Update performance counters
+            m_packetsProcessed.fetch_add(1);
+            m_bytesProcessed.fetch_add(header->tp_len);
 
-                // Only process Ethernet frames
-                if (sll->sll_hatype == ARPHRD_ETHER)
+            // Get socket address info
+            struct sockaddr_ll *sll = reinterpret_cast<struct sockaddr_ll*>(
+                static_cast<char*>(m_ring[frameIndex].iov_base) + TPACKET_ALIGN(sizeof(struct tpacket_hdr)));
+
+            // Only process Ethernet frames
+            if (sll->sll_hatype == ARPHRD_ETHER && header->tp_len > pkt_offset)
+            {
+                u_char *packet = static_cast<u_char*>(m_ring[frameIndex].iov_base) + pkt_offset + 16;
+                unsigned int packetLen = header->tp_len - pkt_offset;
+                
+                // Validate packet bounds before processing
+                if (packetLen > 0 && packetLen <= 65535)
                 {
-                    u_char *packet = static_cast<u_char*>(m_ring[frameIndex].iov_base) + pkt_offset;
-                    handlePacket(header->tp_len,           // Use adjusted length
-                                packet + 16);          // Apply 16-byte offset
+                    // Copy packet data immediately while we own the frame
+                    std::vector<u_char> packetCopy(packet, packet + packetLen);
+                    
+                    // Mark frame as processed AFTER copying data
+                    header->tp_status = 0;
+                    
+                    // Process the copied packet data
+                    handlePacket(sll->sll_ifindex, packetLen, packetCopy.data());
                 }
                 else
                 {
-                    // Count dropped/non-Ethernet packets
+                    // Packet size invalid
                     m_packetsDropped.fetch_add(1);
+                    header->tp_status = 0;
                 }
             }
+            else
+            {
+                // Count dropped/non-Ethernet packets
+                m_packetsDropped.fetch_add(1);
+                header->tp_status = 0;
+            }
 
-            // Mark frame as processed (return ownership to kernel)
-            header->tp_status = 0;
-
-            // Move to next frame - EXACTLY like working code
+            // Move to next frame
             frameIndex = (frameIndex == m_req.tp_frame_nr - 1) ? 0 : frameIndex + 1;
         }
 
-        // Sleep like working code to reduce CPU usage
-        usleep(20000);  // 20ms sleep exactly like working code
-
-        // Sleep when nothing's happening - EXACTLY like working code
-        pfd.fd = m_socket;
-        pfd.events = POLLIN | POLLERR;
+        // Poll for new data
         pfd.revents = 0;
-        poll(&pfd, 1, -1);  // Block indefinitely like working code
+        poll(&pfd, 1, 100);  // 100ms timeout instead of blocking indefinitely
 
-        // Report performance statistics periodically (keep existing logic)
+        // Report performance statistics periodically
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_lastStatsReport);
         
@@ -280,7 +292,7 @@ void PfRingCaptureThread::run()
                 double mbps = (static_cast<double>(bytes) * 8.0) / (elapsed.count() * 1024.0 * 1024.0);
                 
                 std::stringstream ss;
-                ss << "PF_RING [" << m_interface << "] "
+                ss << "PF_RING Stats - "
                    << "Packets: " << packets << " (" << std::fixed << std::setprecision(1) << packetsPerSec << " pps), "
                    << "Rate: " << std::setprecision(2) << mbps << " Mbps";
                 
@@ -297,76 +309,73 @@ void PfRingCaptureThread::run()
     }
 
     m_capturing.store(false);
-    LOG_INFO("PF_RING capture stopped on interface: " + m_interface);
+    LOG_INFO("PF_RING capture stopped");
 }
 
-void PfRingCaptureThread::handlePacket(unsigned int packetLen, const u_char *packet)
+void PfRingCaptureThread::handlePacket(int ifindex, unsigned int packetLen, const u_char *packet)
 {
-    if (!packet || packetLen < 1) {
-        LOG_DEBUG("PF_RING [" + m_interface + "] Invalid packet pointer or length");
-        return;
+    if (!packet || packetLen < 1 || packetLen > 65535) {
+        // LOG_DEBUG("Invalid packet");
+        return; // Invalid packet
     }
 
-    // Process packet EXACTLY like working code - get IP version from first nibble
+    // Process packet - get IP version from first nibble
     uint8_t ipVersion = (*packet) >> 4;
 
     // Validate IP version
     if (ipVersion != 4 && ipVersion != 6)
     {
-        LOG_DEBUG("PF_RING [" + m_interface + "] Non-IP packet captured, ignoring");
-        return; 
+        // LOG_DEBUG("Non-IP packet" + std::to_string(static_cast<int>(ipVersion)));
+        return; // Non-IP packet
     }
 
     // Basic length validation
     unsigned int minHeaderSize = (ipVersion == 4) ? 20 : 40;
     if (packetLen < minHeaderSize)
     {
-        LOG_DEBUG("PF_RING [" + m_interface + "] Packet too short for IPv" + std::to_string(ipVersion) + ", ignoring");
-        return;
+        // LOG_DEBUG("Packet too short");
+        return; // Packet too short
     }
 
-    // Create packet data structure (matching PCap thread format)
+    // Create packet data structure
     PacketData packetData;
     packetData.ipVersion = ipVersion;
-    packetData.dataLength = packetLen;  // This is now the CORRECT adjusted length
+    packetData.dataLength = packetLen;
     packetData.timestamp = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
                                                      std::chrono::system_clock::now().time_since_epoch())
                                                      .count());
-    packetData.interfaceName = m_interface;
+    packetData.interfaceName = std::to_string(ifindex);
 
-    // CRITICAL FIX: Add bounds checking before copying
+    // Safe packet data copying with bounds checking
     try {
-        // Verify we can safely access the memory range
-        if (packetLen > 0 && packetLen <= 65535) { // Reasonable max packet size
-            packetData.packetData.assign(packet, packet + packetLen);
+        packetData.packetData.reserve(packetLen);
+        packetData.packetData.assign(packet, packet + packetLen);
 
-            // Debug logging
-            if (m_verbose && packetLen >= 4)
-            {
-                std::stringstream debug;
-                debug << "PFRING [" << m_interface << "] Captured IPv" << static_cast<int>(ipVersion)
-                      << " packet - Len: " << packetLen
-                      << ", Header: 0x";
-                for (size_t i = 0; i < std::min(static_cast<size_t>(4), static_cast<size_t>(packetLen)); i++)
-                {
-                    debug << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(packet[i]);
-                }
-                LOG_DEBUG(debug.str());
-            }
-
-            // Send to handler
-            if (m_handler)
-            {
-                m_handler->onPacketCaptured(packetData);
-            }
-            else
-            {
-                LOG_ERROR("PF_RING [" + m_interface + "] No packet handler available for packet forwarding");
-            }
-        } else {
-            LOG_ERROR("PF_RING [" + m_interface + "] Invalid packet length: " + std::to_string(packetLen));
+        // Send to handler
+        if (m_handler)
+        {
+            m_handler->onPacketCaptured(packetData);
         }
+        else {
+            LOG_DEBUG("No packet handler assigned");
+        }
+
+       // Debug logging
+        if (m_verbose && packetLen >= 4)
+        {
+            std::stringstream debug;
+            debug << "PFRING [" << ifindex << "] Captured IPv" << static_cast<int>(ipVersion)
+                    << " packet - Len: " << packetLen
+                    << ", Header: 0x";
+            for (size_t i = 0; i < std::min(static_cast<size_t>(4), static_cast<size_t>(packetLen)); i++)
+            {
+                debug << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(packet[i]);
+            }
+            LOG_DEBUG(debug.str());
+        }
+
     } catch (const std::exception& e) {
-        LOG_ERROR("PF_RING [" + m_interface + "] Exception in packet handling: " + std::string(e.what()));
+        // Silently drop packet on exception to avoid log spam
+        return;
     }
 }

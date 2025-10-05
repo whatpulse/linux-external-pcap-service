@@ -58,8 +58,8 @@ private:
     void networkMonitorThreadFunction();
     
     // PF_RING specific methods
-    bool startPfRingCaptureThread(const std::string &interface);
-    void stopPfRingCaptureThread(const std::string &interface);
+    bool startGlobalPfRingThread();
+    void stopGlobalPfRingThread();
     void stopAllCaptureThreads();
 
     std::string m_interface;
@@ -68,7 +68,9 @@ private:
     PacketCallback m_packetCallback;
 
     std::vector<std::unique_ptr<PcapCaptureThread>> m_captureThreads;
-    std::vector<std::unique_ptr<PfRingCaptureThread>> m_pfringCaptureThreads;
+    
+    // Single global PF_RING thread (captures all interfaces)
+    std::unique_ptr<PfRingCaptureThread> m_globalPfRingThread;
 
     // Capture method preference
     bool m_preferPfRing;

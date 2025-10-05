@@ -36,7 +36,7 @@ class IPacketHandler;
 class PfRingCaptureThread
 {
 public:
-  explicit PfRingCaptureThread(const std::string &interface, bool verbose, IPacketHandler *handler);
+  explicit PfRingCaptureThread(bool verbose, IPacketHandler *handler);
   ~PfRingCaptureThread();
 
   void start();
@@ -44,16 +44,14 @@ public:
   void join();
   bool isCapturing() const { return m_capturing.load(); }
   bool isReady() const { return m_ready; }
-  const std::string &interfaceName() const { return m_interface; }
 
   // Static method to check if PF_RING is supported on the system
   static bool isSupported();
 
 private:
   void run();
-  void handlePacket(unsigned int packetLen, const u_char *packet);
+  void handlePacket(int ifindex, unsigned int packetLen, const u_char *packet);
 
-  std::string m_interface;
   bool m_verbose;
   std::atomic<bool> m_capturing;
   std::atomic<bool> m_shouldStop;
