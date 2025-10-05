@@ -47,7 +47,7 @@ public:
     void stop();
 
     // Called by capture threads when a packet is captured
-    void onPacketCaptured(const PacketData &packet);
+    void onPacketCaptured(const PacketData &packet) override;
 
 private:
     // Network interface discovery and monitoring

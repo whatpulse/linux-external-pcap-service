@@ -232,8 +232,8 @@ void PfRingCaptureThread::run()
             m_bytesProcessed.fetch_add(header->tp_len);
 
             // Get socket address info
-            struct sockaddr_ll *sll = reinterpret_cast<struct sockaddr_ll*>(
-                static_cast<char*>(m_ring[frameIndex].iov_base) + TPACKET_ALIGN(sizeof(struct tpacket_hdr)));
+            const struct sockaddr_ll *sll = reinterpret_cast<const struct sockaddr_ll*>(
+                static_cast<const char*>(m_ring[frameIndex].iov_base) + TPACKET_ALIGN(sizeof(struct tpacket_hdr)));
 
             // Only process Ethernet frames
             if (sll->sll_hatype == ARPHRD_ETHER && header->tp_len > pkt_offset)
@@ -242,7 +242,7 @@ void PfRingCaptureThread::run()
                 unsigned int packetLen = header->tp_len - pkt_offset;
                 
                 // Validate packet bounds before processing
-                if (packetLen > 0 && packetLen <= 65535)
+                if (packetLen <= 65535)
                 {
                     // Copy packet data immediately while we own the frame
                     std::vector<u_char> packetCopy(packet, packet + packetLen);

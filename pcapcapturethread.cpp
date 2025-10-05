@@ -32,14 +32,10 @@
 // Performance optimization constants (matching built-in PCap monitor)
 #define DEFAULT_SNAPLEN 9000
 
-PcapCaptureThread::PcapCaptureThread(const std::string &interface, bool verbose, IPacketHandler *handler)
+PcapCaptureThread::PcapCaptureThread(const std::string &interface, bool verbose, IPacketHandler *handler) :
+  m_interface(interface), m_verbose(verbose), m_capturing(false), m_shouldStop(false),
+  m_pcapHandle(nullptr), m_handler(handler)
 {
-  m_interface = interface;
-  m_verbose = verbose;
-  m_capturing = false;
-  m_shouldStop = false;
-  m_pcapHandle = nullptr;
-  m_handler = handler;
 }
 
 PcapCaptureThread::~PcapCaptureThread()

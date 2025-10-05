@@ -231,13 +231,11 @@ void CaptureService::updateCaptureThreads(const std::vector<std::string> &curren
 
     // Find interfaces that are no longer available and should be stopped
     std::vector<std::string> interfacesToRemove;
-    for (const std::string &monitoredInterface : m_monitoredInterfaces)
-    {
-        if (std::find(currentInterfaces.begin(), currentInterfaces.end(), monitoredInterface) == currentInterfaces.end())
-        {
-            interfacesToRemove.push_back(monitoredInterface);
-        }
-    }
+    std::copy_if(m_monitoredInterfaces.begin(), m_monitoredInterfaces.end(),
+                 std::back_inserter(interfacesToRemove),
+                 [&currentInterfaces](const std::string &monitoredInterface) {
+                     return std::find(currentInterfaces.begin(), currentInterfaces.end(), monitoredInterface) == currentInterfaces.end();
+                 });
 
     for (const std::string &interface : interfacesToRemove)
     {
@@ -249,14 +247,14 @@ void CaptureService::updateCaptureThreads(const std::vector<std::string> &curren
 
 void CaptureService::startCaptureThread(const std::string &interface)
 {
-    // Check if we already have a PCap thread for this interface 
+    // Check if we already have a PCap thread for this interface
     // (PF_RING is now global and doesn't need per-interface checking)
-    for (const auto &thread : m_captureThreads)
+    if (std::any_of(m_captureThreads.begin(), m_captureThreads.end(),
+                    [&interface](const std::unique_ptr<PcapCaptureThread> &thread) {
+                        return thread->interfaceName() == interface;
+                    }))
     {
-        if (thread->interfaceName() == interface)
-        {
-            return; // Already monitoring this interface
-        }
+        return; // Already monitoring this interface
     }
 
     // Only start PCap threads now (PF_RING is handled globally)

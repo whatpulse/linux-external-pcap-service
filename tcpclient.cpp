@@ -70,7 +70,7 @@ bool TcpClient::connect(const std::string &host, uint16_t port)
   }
 
   // Resolve hostname
-  struct hostent *hostInfo = gethostbyname(host.c_str());
+  const struct hostent *hostInfo = gethostbyname(host.c_str());
   if (!hostInfo)
   {
     Logger::getInstance().logConnectionFailed(host, port, "Failed to resolve hostname: " + host);

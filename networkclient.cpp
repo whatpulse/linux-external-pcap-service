@@ -19,6 +19,7 @@
 #include <iostream>
 #include <iomanip>
 #include <sstream>
+#include <numeric>
 
 NetworkClient::NetworkClient()
     : m_port(3499), m_verbose(false), m_running(false),
@@ -280,18 +281,17 @@ bool NetworkClient::sendBatchedPackets(const std::vector<PacketData> &batch)
     }
 
     // Calculate total size for the batch
-    uint32_t totalSize = sizeof(uint32_t); // batchCount field
-
-    for (const auto &packet : batch)
-    {
-        totalSize += sizeof(uint8_t) +                     // IP version
-                    sizeof(uint16_t) +                     // data length
-                    sizeof(uint32_t) +                     // timestamp
-                    sizeof(uint16_t) +                     // interface name length
-                    packet.interfaceName.size() +          // interface name
-                    sizeof(uint32_t) +                     // packet data size
-                    packet.packetData.size();              // packet data
-    }
+    uint32_t totalSize = sizeof(uint32_t) + // batchCount field
+                         std::accumulate(batch.begin(), batch.end(), 0u,
+                                       [](uint32_t sum, const PacketData &packet) {
+                                           return sum + sizeof(uint8_t) +                     // IP version
+                                                  sizeof(uint16_t) +                     // data length
+                                                  sizeof(uint32_t) +                     // timestamp
+                                                  sizeof(uint16_t) +                     // interface name length
+                                                  packet.interfaceName.size() +          // interface name
+                                                  sizeof(uint32_t) +                     // packet data size
+                                                  packet.packetData.size();              // packet data
+                                       });
 
     // Create binary protocol data
     std::vector<uint8_t> data;

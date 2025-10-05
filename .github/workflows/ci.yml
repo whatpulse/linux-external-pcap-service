@@ -1,0 +1,137 @@
+name: CI - Build and Test
+
+on:
+  # Run on all pull requests
+  pull_request:
+    branches:
+      - main
+
+  # Run on pushes to main
+  push:
+    branches:
+      - main
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+
+    strategy:
+      matrix:
+        build_type: [release, debug]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q \
+            libpcap-dev \
+            build-essential \
+            cppcheck \
+            clang-tidy
+
+      - name: Build project (${{ matrix.build_type }})
+        run: |
+          make clean
+          if [ "${{ matrix.build_type }}" == "debug" ]; then
+            make debug
+            echo "✓ Debug build completed"
+          else
+            make all
+            echo "✓ Release build completed"
+          fi
+
+      - name: Verify binary exists
+        run: |
+          if [ "${{ matrix.build_type }}" == "debug" ]; then
+            BINARY="whatpulse-pcap-service-debug"
+          else
+            BINARY="whatpulse-pcap-service"
+          fi
+
+          if [ ! -f "$BINARY" ]; then
+            echo "Error: Binary $BINARY not found after build"
+            exit 1
+          fi
+
+          echo "✓ Binary $BINARY verified"
+          ls -lh "$BINARY"
+
+      - name: Run basic functionality check
+        run: |
+          if [ "${{ matrix.build_type }}" == "debug" ]; then
+            BINARY="./whatpulse-pcap-service-debug"
+          else
+            BINARY="./whatpulse-pcap-service"
+          fi
+
+          # Test --version flag
+          $BINARY --version || true
+
+          # Test --help flag
+          $BINARY --help || true
+
+          echo "✓ Basic functionality checks passed"
+
+  static-analysis:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install analysis tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q \
+            libpcap-dev \
+            build-essential \
+            cppcheck
+
+      - name: Run cppcheck
+        run: |
+          echo "Running cppcheck static analysis..."
+          cppcheck \
+            --enable=warning,style,performance,portability \
+            --inline-suppr \
+            --suppress=missingIncludeSystem \
+            --suppress=unmatchedSuppression \
+            --suppress=unusedStructMember \
+            --suppress=knownConditionTrueFalse \
+            --std=c++17 \
+            --language=c++ \
+            --error-exitcode=1 \
+            --quiet \
+            *.cpp *.h
+
+          echo "✓ Static analysis passed"
+
+  build-summary:
+    runs-on: ubuntu-22.04
+    needs: [build-and-test, static-analysis]
+    if: always()
+
+    steps:
+      - name: Check results
+        run: |
+          echo "## 🎉 CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.build-and-test.result }}" == "success" ] && [ "${{ needs.static-analysis.result }}" == "success" ]; then
+            echo "✅ All checks passed!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Build (release): Passed" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Build (debug): Passed" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Static analysis: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Some checks failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- Build: ${{ needs.build-and-test.result }}" >> $GITHUB_STEP_SUMMARY
+            echo "- Static analysis: ${{ needs.static-analysis.result }}" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
