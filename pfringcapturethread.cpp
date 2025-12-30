@@ -236,7 +236,7 @@ void PfRingCaptureThread::run()
                 static_cast<const char*>(m_ring[frameIndex].iov_base) + TPACKET_ALIGN(sizeof(struct tpacket_hdr)));
 
             // Only process Ethernet frames
-            if (sll->sll_hatype == ARPHRD_ETHER && header->tp_len > pkt_offset)
+            if (sll->sll_hatype == ARPHRD_ETHER)
             {
                 u_char *packet = static_cast<u_char*>(m_ring[frameIndex].iov_base) + pkt_offset + 16;
                 unsigned int packetLen = header->tp_len - pkt_offset;
