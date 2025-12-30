@@ -239,6 +239,15 @@ void PfRingCaptureThread::run()
                 u_char *packet = static_cast<u_char*>(m_ring[frameIndex].iov_base)
                                    + header->tp_net;
 
+                /*
+                 * Make a string copy of the packet address in case we need it
+                 * later on.
+                 *
+                 * This is only necessary for debugging purposes.
+                 */
+                std::stringstream stream;
+                stream << std::hex << reinterpret_cast<std::uintptr_t> (packet);
+
                 // Validate packet bounds before processing
                 /*
                  * Technically speaking, an IPv6 packet can be a lot larger
@@ -257,6 +266,10 @@ void PfRingCaptureThread::run()
                     std::ptrdiff_t len = std::min (header->tp_snaplen,
                                                    (static_cast<unsigned int> (PFRING_FRAME_SIZE)
                                                       - header->tp_net));
+                    LOG_DEBUG ("Going to copy packet 0x" + stream.str ()
+                                 + " with length " + std::to_string (len)
+                                 + " at frame index " + std::to_string (frameIndex)
+                                 + " to new vector, Victor.");
 
                     // Copy packet data immediately while we own the frame
                     std::vector<u_char> packetCopy(packet, packet + len);
