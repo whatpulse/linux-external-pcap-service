@@ -211,8 +211,6 @@ void PfRingCaptureThread::run()
     pfd.events = POLLIN | POLLERR;
 
     unsigned int frameIndex = 0; 
-    const int pkt_offset = TPACKET_ALIGN(sizeof(struct tpacket_hdr)) + 
-                          TPACKET_ALIGN(sizeof(struct sockaddr_ll));
 
     while (!m_shouldStop.load())
     {
@@ -240,19 +238,25 @@ void PfRingCaptureThread::run()
             {
                 u_char *packet = static_cast<u_char*>(m_ring[frameIndex].iov_base)
                                    + header->tp_net;
-                unsigned int packetLen = header->tp_len - pkt_offset;
 
                 // Validate packet bounds before processing
-                if (packetLen <= 65535)
+                /*
+                 * Technically speaking, an IPv6 packet can be a lot larger
+                 * than 65535 bytes.
+                 *
+                 * Practically, this limit is probably still good enough to
+                 * weed out weird-looking data.
+                 */
+                if (header->tp_len <= 65535)
                 {
                     // Copy packet data immediately while we own the frame
-                    std::vector<u_char> packetCopy(packet, packet + packetLen);
+                    std::vector<u_char> packetCopy(packet, packet + header->tp_snaplen);
                     
                     // Mark frame as processed AFTER copying data
                     header->tp_status = 0;
                     
                     // Process the copied packet data
-                    handlePacket(sll->sll_ifindex, packetLen, packetCopy.data());
+                    handlePacket(sll->sll_ifindex, header->tp_snaplen, packetCopy.data());
                 }
                 else
                 {
