@@ -238,9 +238,10 @@ void PfRingCaptureThread::run()
             // Only process Ethernet frames
             if (sll->sll_hatype == ARPHRD_ETHER)
             {
-                u_char *packet = static_cast<u_char*>(m_ring[frameIndex].iov_base) + pkt_offset + 16;
+                u_char *packet = static_cast<u_char*>(m_ring[frameIndex].iov_base)
+                                   + header->tp_net;
                 unsigned int packetLen = header->tp_len - pkt_offset;
-                
+
                 // Validate packet bounds before processing
                 if (packetLen <= 65535)
                 {
