@@ -249,14 +249,23 @@ void PfRingCaptureThread::run()
                  */
                 if (header->tp_len <= 65535)
                 {
+                    /*
+                     * Make sure that we don't read past a frame!
+                     * This is especially important at the end of the mmapped
+                     * ring buffer.
+                     */
+                    std::ptrdiff_t len = std::min (header->tp_snaplen,
+                                                   (static_cast<unsigned int> (PFRING_FRAME_SIZE)
+                                                      - header->tp_net));
+
                     // Copy packet data immediately while we own the frame
-                    std::vector<u_char> packetCopy(packet, packet + header->tp_snaplen);
+                    std::vector<u_char> packetCopy(packet, packet + len);
                     
                     // Mark frame as processed AFTER copying data
                     header->tp_status = 0;
                     
                     // Process the copied packet data
-                    handlePacket(sll->sll_ifindex, header->tp_snaplen, packetCopy.data());
+                    handlePacket(sll->sll_ifindex, len, packetCopy.data());
                 }
                 else
                 {
