@@ -97,7 +97,17 @@ int main(int argc, char *argv[])
             host = optarg;
             break;
         case 'p':
-            port = static_cast<uint16_t>(std::stoul(optarg));
+            try {
+                unsigned long portVal = std::stoul(optarg);
+                if (portVal > 65535) {
+                    std::cerr << "Error: Port number must be between 0 and 65535\n";
+                    return 1;
+                }
+                port = static_cast<uint16_t>(portVal);
+            } catch (const std::exception& e) {
+                std::cerr << "Error: Invalid port number '" << optarg << "'\n";
+                return 1;
+            }
             break;
         case 'i':
             interface = optarg;
@@ -158,8 +168,11 @@ int main(int argc, char *argv[])
     g_captureService = std::make_unique<CaptureService>();
     
     // Create callback that forwards packets to network client
-    auto packetCallback = [&](const PacketData& packet) {
-        g_networkClient->queuePacket(packet);
+    // Note: Capture by value with a pointer check to handle shutdown races
+    auto packetCallback = [](const PacketData& packet) {
+        if (g_networkClient) {
+            g_networkClient->queuePacket(packet);
+        }
     };
 
     if (!g_captureService->initialize(interface, verbose, packetCallback))
@@ -182,15 +195,17 @@ int main(int argc, char *argv[])
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    // Graceful shutdown
+    // Graceful shutdown - order matters: stop capture first, then network
     LOG_INFO("Shutdown requested, stopping services...");
     if (g_captureService)
     {
         g_captureService->stop();
+        g_captureService.reset();  // Fully destroy before network client
     }
     if (g_networkClient)
     {
         g_networkClient->stop();
+        g_networkClient.reset();
     }
     LOG_INFO("Services stopped successfully");
 

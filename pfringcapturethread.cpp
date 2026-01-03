@@ -42,7 +42,7 @@
 #define PFRING_BLOCK_COUNT 1
 
 PfRingCaptureThread::PfRingCaptureThread(bool verbose, IPacketHandler *handler)
-    : m_verbose(verbose), m_capturing(false), m_shouldStop(false), 
+    : m_verbose(verbose), m_capturing(false), m_shouldStop(false),
       m_ready(false), m_socket(-1), m_map(nullptr), m_ring(nullptr), m_frameIndex(0),
       m_packetsProcessed(0), m_bytesProcessed(0), m_packetsDropped(0),
       m_lastStatsReport(std::chrono::steady_clock::now()), m_handler(handler)
@@ -81,9 +81,8 @@ void PfRingCaptureThread::start()
 void PfRingCaptureThread::stop()
 {
     m_shouldStop.store(true);
-
-    std::lock_guard<std::mutex> lock(m_mutex);
-    cleanupPfRing();
+    // Note: Do NOT call cleanupPfRing() here - the run() thread may still be using resources.
+    // Cleanup happens in join() after the thread has finished.
 }
 
 void PfRingCaptureThread::join()
@@ -92,6 +91,10 @@ void PfRingCaptureThread::join()
     {
         m_thread->join();
     }
+
+    // Clean up resources after thread has finished
+    std::lock_guard<std::mutex> lock(m_mutex);
+    cleanupPfRing();
 }
 
 bool PfRingCaptureThread::initializePfRing()
@@ -138,6 +141,15 @@ bool PfRingCaptureThread::initializePfRing()
 
     // Setup ring buffer structure
     m_ring = static_cast<struct iovec*>(malloc(m_req.tp_frame_nr * sizeof(struct iovec)));
+    if (!m_ring)
+    {
+        LOG_ERROR("Failed to allocate ring buffer structure");
+        munmap(m_map, m_req.tp_block_size * m_req.tp_block_nr);
+        m_map = nullptr;
+        close(m_socket);
+        m_socket = -1;
+        return false;
+    }
     for (unsigned int i = 0; i < m_req.tp_frame_nr; i++)
     {
         m_ring[i].iov_base = static_cast<void*>(m_map + (i * m_req.tp_frame_size));
@@ -163,14 +175,14 @@ bool PfRingCaptureThread::initializePfRing()
     }
 
     m_ready = true;
-    
+
     // Log ring buffer configuration
     std::stringstream ss;
     ss << "PF_RING initialized successfully "
-       << " - Ring buffer: " << m_req.tp_frame_nr << " frames x " << m_req.tp_frame_size 
+       << " - Ring buffer: " << m_req.tp_frame_nr << " frames x " << m_req.tp_frame_size
        << " bytes = " << (m_req.tp_block_size / 1024) << " KB";
     LOG_INFO(ss.str());
-    
+
     return true;
 }
 
@@ -210,7 +222,7 @@ void PfRingCaptureThread::run()
     pfd.fd = m_socket;
     pfd.events = POLLIN | POLLERR;
 
-    unsigned int frameIndex = 0; 
+    unsigned int frameIndex = 0;
 
     while (!m_shouldStop.load())
     {
@@ -218,7 +230,7 @@ void PfRingCaptureThread::run()
         while (!m_shouldStop.load())
         {
             struct tpacket_hdr *header = static_cast<struct tpacket_hdr*>(m_ring[frameIndex].iov_base);
-            
+
             // Check if frame has data (TP_STATUS_USER means userspace owns the frame)
             if (!(header->tp_status & TP_STATUS_USER))
             {
@@ -236,49 +248,44 @@ void PfRingCaptureThread::run()
             // Only process Ethernet frames
             if (sll->sll_hatype == ARPHRD_ETHER)
             {
+                // Guard against unsigned underflow if tp_net >= PFRING_FRAME_SIZE
+                if (header->tp_net >= PFRING_FRAME_SIZE)
+                {
+                    m_packetsDropped.fetch_add(1);
+                    header->tp_status = 0;
+                    frameIndex = (frameIndex == m_req.tp_frame_nr - 1) ? 0 : frameIndex + 1;
+                    continue;
+                }
+
                 u_char *packet = static_cast<u_char*>(m_ring[frameIndex].iov_base)
                                    + header->tp_net;
 
-                /*
-                 * Make a string copy of the packet address in case we need it
-                 * later on.
-                 *
-                 * This is only necessary for debugging purposes.
-                 */
-                std::stringstream stream;
-                stream << std::hex << reinterpret_cast<std::uintptr_t> (packet);
-
                 // Validate packet bounds before processing
-                /*
-                 * Technically speaking, an IPv6 packet can be a lot larger
-                 * than 65535 bytes.
-                 *
-                 * Practically, this limit is probably still good enough to
-                 * weed out weird-looking data.
-                 */
+                // (65535 limit filters out weird-looking data; IPv6 jumbograms are rare)
                 if (header->tp_len <= 65535)
                 {
-                    /*
-                     * Make sure that we don't read past a frame!
-                     * This is especially important at the end of the mmapped
-                     * ring buffer.
-                     */
-                    std::ptrdiff_t len = std::min (header->tp_snaplen,
-                                                   (static_cast<unsigned int> (PFRING_FRAME_SIZE)
-                                                      - header->tp_net));
-                    LOG_DEBUG ("Going to copy packet 0x" + stream.str ()
-                                 + " with length " + std::to_string (len)
-                                 + " at frame index " + std::to_string (frameIndex)
-                                 + " to new vector, Victor.");
+                    // Make sure that we don't read past a frame boundary
+                    std::ptrdiff_t len = std::min(header->tp_snaplen,
+                                                  static_cast<unsigned int>(PFRING_FRAME_SIZE) - header->tp_net);
 
-                    // Copy packet data immediately while we own the frame
+                    if (m_verbose)
+                    {
+                        std::stringstream stream;
+                        stream << std::hex << reinterpret_cast<std::uintptr_t>(packet);
+                        LOG_DEBUG("Copying packet 0x" + stream.str()
+                                  + " with length " + std::to_string(len)
+                                  + " at frame index " + std::to_string(frameIndex));
+                    }
+
+                    // Copy all data we need from the frame BEFORE releasing it
                     std::vector<u_char> packetCopy(packet, packet + len);
-                    
-                    // Mark frame as processed AFTER copying data
+                    int ifindex = sll->sll_ifindex;  // Save ifindex before releasing frame
+
+                    // Mark frame as processed AFTER copying all needed data
                     header->tp_status = 0;
-                    
-                    // Process the copied packet data
-                    handlePacket(sll->sll_ifindex, len, packetCopy.data());
+
+                    // Process the copied packet data (frame is now released to kernel)
+                    handlePacket(ifindex, len, packetCopy.data());
                 }
                 else
                 {
@@ -305,32 +312,32 @@ void PfRingCaptureThread::run()
         // Report performance statistics periodically
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_lastStatsReport);
-        
+
         int reportInterval = m_verbose ? 10 : 300; // 10s if verbose, else 5min
         if (elapsed.count() >= reportInterval && (m_packetsProcessed.load() > 0 || m_packetsDropped.load() > 0))
         {
             uint64_t packets = m_packetsProcessed.exchange(0);
             uint64_t bytes = m_bytesProcessed.exchange(0);
             uint64_t dropped = m_packetsDropped.exchange(0);
-            
+
             if (packets > 0 || dropped > 0)
             {
                 double packetsPerSec = static_cast<double>(packets) / elapsed.count();
                 double mbps = (static_cast<double>(bytes) * 8.0) / (elapsed.count() * 1024.0 * 1024.0);
-                
+
                 std::stringstream ss;
                 ss << "PF_RING Stats - "
                    << "Packets: " << packets << " (" << std::fixed << std::setprecision(1) << packetsPerSec << " pps), "
                    << "Rate: " << std::setprecision(2) << mbps << " Mbps";
-                
+
                 if (dropped > 0)
                 {
                     ss << ", Dropped: " << dropped;
                 }
-                
+
                 LOG_INFO(ss.str());
             }
-            
+
             m_lastStatsReport = now;
         }
     }
