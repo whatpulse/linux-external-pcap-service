@@ -25,25 +25,29 @@ Logger &Logger::getInstance()
 
 void Logger::initialize(const std::string &logFile, LogLevel level, bool verbose)
 {
-  m_level = level;
-  m_verbose = verbose;
-
-  // Set performance logging intervals based on verbose mode
-  if (verbose)
   {
-    m_performanceInterval = m_verbosePerformanceInterval;
-  }
+    std::lock_guard<std::mutex> lock(m_mutex);
 
-  if (!logFile.empty())
-  {
-    m_logFile.close();
-    m_logFile.open(logFile, std::ios::app);
-    if (!m_logFile.is_open())
+    m_level = level;
+    m_verbose = verbose;
+
+    // Set performance logging intervals based on verbose mode
+    if (verbose)
     {
-      std::cerr << "Failed to open log file: " << logFile << std::endl;
-      return;
+      m_performanceInterval = m_verbosePerformanceInterval;
     }
-  }
+
+    if (!logFile.empty())
+    {
+      m_logFile.close();
+      m_logFile.open(logFile, std::ios::app);
+      if (!m_logFile.is_open())
+      {
+        std::cerr << "Failed to open log file: " << logFile << std::endl;
+        return;
+      }
+    }
+  }  // Lock released here before calling log()
 
   // Initial log entry
   std::stringstream ss;
@@ -61,6 +65,9 @@ void Logger::log(LogLevel level, const std::string &message)
   }
 
   std::string logEntry = getCurrentTimestamp() + " [" + levelToString(level) + "] " + message;
+
+  // Lock mutex for thread-safe file and console output
+  std::lock_guard<std::mutex> lock(m_mutex);
 
   bool isOpen = m_logFile.is_open();
   if (isOpen)
@@ -172,6 +179,7 @@ std::string Logger::levelToString(LogLevel level)
 
 bool Logger::shouldLogPerformance()
 {
+  std::lock_guard<std::mutex> lock(m_mutex);
   auto now = std::chrono::steady_clock::now();
   if (now - m_lastPerformanceLog >= m_performanceInterval)
   {
