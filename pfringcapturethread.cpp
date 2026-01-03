@@ -211,8 +211,6 @@ void PfRingCaptureThread::run()
     pfd.events = POLLIN | POLLERR;
 
     unsigned int frameIndex = 0; 
-    const int pkt_offset = TPACKET_ALIGN(sizeof(struct tpacket_hdr)) + 
-                          TPACKET_ALIGN(sizeof(struct sockaddr_ll));
 
     while (!m_shouldStop.load())
     {
@@ -236,22 +234,51 @@ void PfRingCaptureThread::run()
                 static_cast<const char*>(m_ring[frameIndex].iov_base) + TPACKET_ALIGN(sizeof(struct tpacket_hdr)));
 
             // Only process Ethernet frames
-            if (sll->sll_hatype == ARPHRD_ETHER && header->tp_len > pkt_offset)
+            if (sll->sll_hatype == ARPHRD_ETHER)
             {
-                u_char *packet = static_cast<u_char*>(m_ring[frameIndex].iov_base) + pkt_offset + 16;
-                unsigned int packetLen = header->tp_len - pkt_offset;
-                
+                u_char *packet = static_cast<u_char*>(m_ring[frameIndex].iov_base)
+                                   + header->tp_net;
+
+                /*
+                 * Make a string copy of the packet address in case we need it
+                 * later on.
+                 *
+                 * This is only necessary for debugging purposes.
+                 */
+                std::stringstream stream;
+                stream << std::hex << reinterpret_cast<std::uintptr_t> (packet);
+
                 // Validate packet bounds before processing
-                if (packetLen <= 65535)
+                /*
+                 * Technically speaking, an IPv6 packet can be a lot larger
+                 * than 65535 bytes.
+                 *
+                 * Practically, this limit is probably still good enough to
+                 * weed out weird-looking data.
+                 */
+                if (header->tp_len <= 65535)
                 {
+                    /*
+                     * Make sure that we don't read past a frame!
+                     * This is especially important at the end of the mmapped
+                     * ring buffer.
+                     */
+                    std::ptrdiff_t len = std::min (header->tp_snaplen,
+                                                   (static_cast<unsigned int> (PFRING_FRAME_SIZE)
+                                                      - header->tp_net));
+                    LOG_DEBUG ("Going to copy packet 0x" + stream.str ()
+                                 + " with length " + std::to_string (len)
+                                 + " at frame index " + std::to_string (frameIndex)
+                                 + " to new vector, Victor.");
+
                     // Copy packet data immediately while we own the frame
-                    std::vector<u_char> packetCopy(packet, packet + packetLen);
+                    std::vector<u_char> packetCopy(packet, packet + len);
                     
                     // Mark frame as processed AFTER copying data
                     header->tp_status = 0;
                     
                     // Process the copied packet data
-                    handlePacket(sll->sll_ifindex, packetLen, packetCopy.data());
+                    handlePacket(sll->sll_ifindex, len, packetCopy.data());
                 }
                 else
                 {
