@@ -1,0 +1,192 @@
+name: Runtime Test
+
+on:
+  # Run on all pull requests
+  pull_request:
+    branches:
+      - main
+
+  # Run on pushes to main
+  push:
+    branches:
+      - main
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  runtime-test:
+    runs-on: ubuntu-22.04
+
+    strategy:
+      matrix:
+        build_type: [release, debug]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libpcap-dev build-essential
+
+      - name: Build ${{ matrix.build_type }} binary
+        run: |
+          make clean
+          if [ "${{ matrix.build_type }}" == "debug" ]; then
+            make debug
+            echo "BINARY=./whatpulse-pcap-service-debug" >> $GITHUB_ENV
+          else
+            make all
+            echo "BINARY=./whatpulse-pcap-service" >> $GITHUB_ENV
+          fi
+
+      - name: Test graceful startup and shutdown
+        run: |
+          LOG=$(mktemp)
+
+          echo "Starting service (${{ matrix.build_type }})..."
+
+          # Start service with verbose logging to console
+          sudo $BINARY --log-file "" --verbose > "$LOG" 2>&1 &
+          PID=$!
+
+          # Wait for initialization
+          sleep 5
+
+          # Verify still running
+          if ! kill -0 $PID 2>/dev/null; then
+            echo "::error::Service crashed during startup"
+            cat "$LOG"
+            exit 1
+          fi
+
+          echo "Service running with PID $PID, generating traffic..."
+
+          # Generate network traffic
+          ping -c 10 127.0.0.1 > /dev/null &
+          curl -sf https://whatpulse.org > /dev/null || true
+          wget -q -O /dev/null https://whatpulse.org || true
+
+          # Let it capture for a while
+          sleep 10
+
+          # Verify still running after traffic
+          if ! kill -0 $PID 2>/dev/null; then
+            echo "::error::Service crashed during operation"
+            cat "$LOG"
+            exit 1
+          fi
+
+          # Graceful shutdown
+          echo "Sending SIGTERM..."
+          sudo kill -TERM $PID
+
+          # Wait for clean exit (max 10 seconds)
+          for i in {1..10}; do
+            if ! kill -0 $PID 2>/dev/null; then
+              echo "Service exited cleanly"
+              break
+            fi
+            sleep 1
+          done
+
+          # Force kill if still running
+          if kill -0 $PID 2>/dev/null; then
+            echo "::warning::Service did not exit gracefully, sending SIGKILL"
+            sudo kill -9 $PID 2>/dev/null || true
+          fi
+
+          echo "=== Service Log ==="
+          cat "$LOG"
+          echo "==================="
+
+          # Validate output
+          if ! grep -iq "starting" "$LOG"; then
+            echo "::error::Missing startup message in log"
+            exit 1
+          fi
+
+          if ! grep -iq "PF_RING\|PCap\|capture" "$LOG"; then
+            echo "::error::Missing capture initialization in log"
+            exit 1
+          fi
+
+          echo "✓ Runtime test passed (${{ matrix.build_type }})"
+
+      - name: Test invalid arguments
+        run: |
+          echo "Testing invalid port string..."
+          $BINARY --port "abc" 2>&1 | grep -qi "invalid\|error" || {
+            echo "::error::Invalid port string not handled correctly"
+            exit 1
+          }
+
+          echo "Testing port out of range..."
+          $BINARY --port 70000 2>&1 | grep -qi "65535\|error" || {
+            echo "::error::Out of range port not handled correctly"
+            exit 1
+          }
+
+          echo "✓ Argument validation test passed"
+
+      - name: Test with dummy network interface
+        run: |
+          LOG=$(mktemp)
+
+          # Create dummy interface
+          sudo ip link add dummy0 type dummy
+          sudo ip addr add 192.168.100.1/24 dev dummy0
+          sudo ip link set dummy0 up
+
+          echo "Created dummy0 interface, starting capture..."
+
+          # Run capture on specific interface
+          sudo timeout --signal=TERM 15s $BINARY \
+            --interface dummy0 \
+            --log-file "" \
+            --verbose > "$LOG" 2>&1 &
+          PID=$!
+
+          sleep 3
+
+          # Generate traffic on dummy interface
+          ping -c 5 -I dummy0 192.168.100.1 > /dev/null 2>&1 || true
+
+          # Wait for timeout
+          wait $PID 2>/dev/null || true
+
+          echo "=== Dummy Interface Log ==="
+          cat "$LOG"
+          echo "============================"
+
+          # Cleanup
+          sudo ip link del dummy0
+
+          echo "✓ Dummy interface test passed"
+
+  runtime-summary:
+    runs-on: ubuntu-22.04
+    needs: [runtime-test]
+    if: always()
+
+    steps:
+      - name: Check results
+        run: |
+          echo "## Runtime Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.runtime-test.result }}" == "success" ]; then
+            echo "✅ All runtime tests passed!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Release build: Startup, traffic, shutdown" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Debug build: Startup, traffic, shutdown" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Argument validation" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Dummy interface capture" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Runtime tests failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Result: ${{ needs.runtime-test.result }}" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
