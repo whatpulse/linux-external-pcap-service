@@ -288,17 +288,20 @@ void CaptureService::stopCaptureThread(const std::string &interface)
     bool stopped = false;
 
     // Only handle PCap threads (PF_RING is global)
-    auto it = std::remove_if(m_captureThreads.begin(), m_captureThreads.end(),
-                             [&interface](const std::unique_ptr<PcapCaptureThread> &thread)
-                             {
-                                 return thread->interfaceName() == interface;
-                             });
-
-    if (it != m_captureThreads.end())
+    // First find and stop threads, then erase them (avoid use-after-move)
+    for (auto it = m_captureThreads.begin(); it != m_captureThreads.end(); )
     {
-        (*it)->stop();
-        stopped = true;
-        m_captureThreads.erase(it, m_captureThreads.end());
+        if ((*it)->interfaceName() == interface)
+        {
+            (*it)->stop();
+            (*it)->join();
+            it = m_captureThreads.erase(it);
+            stopped = true;
+        }
+        else
+        {
+            ++it;
+        }
     }
 
     if (stopped)
