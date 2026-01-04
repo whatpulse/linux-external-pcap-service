@@ -66,7 +66,7 @@ if [ "$CURRENT_BRANCH" = "gitbutler/workspace" ]; then
     USING_GITBUTLER=true
     echo "🔀 Detected GitButler workspace branch"
     echo "   Switching to main branch for release..."
-    git checkout main
+    git checkout main && git pull origin main
     echo "✅ Switched to main branch"
     echo ""
 fi
