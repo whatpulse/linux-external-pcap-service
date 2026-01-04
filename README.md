@@ -12,7 +12,26 @@ When WhatPulse runs as an AppImage or in other restricted environments, it may n
 
 ## Installation
 
-### Package Manager Installation (Recommended)
+### Quick Install (Recommended)
+
+The easiest way to install is using our auto-installer script, which detects your distribution and installs the appropriate package:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/whatpulse/linux-external-pcap-service/main/auto-install.sh | sudo bash
+```
+
+Or using wget:
+```bash
+wget -qO- https://raw.githubusercontent.com/whatpulse/linux-external-pcap-service/main/auto-install.sh | sudo bash
+```
+
+This script will:
+- Detect your Linux distribution
+- Download the latest release package
+- Install it using your package manager
+- Start and enable the systemd service
+
+### Manual Package Installation
 
 Download the latest packages from the [GitHub Releases page](https://github.com/whatpulse/linux-external-pcap-service).
 
