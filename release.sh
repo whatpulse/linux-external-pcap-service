@@ -58,6 +58,19 @@ if [ ! -f "main.cpp" ]; then
     exit 1
 fi
 
+# Detect if we're on GitButler workspace branch
+CURRENT_BRANCH=$(git branch --show-current)
+USING_GITBUTLER=false
+
+if [ "$CURRENT_BRANCH" = "gitbutler/workspace" ]; then
+    USING_GITBUTLER=true
+    echo "🔀 Detected GitButler workspace branch"
+    echo "   Switching to main branch for release..."
+    git checkout main
+    echo "✅ Switched to main branch"
+    echo ""
+fi
+
 # Get current version from source
 CURRENT_VERSION=$(grep '#define PCAP_SERVICE_VERSION ' main.cpp | awk -F '"' '{print $2}')
 echo "Current version in source: $CURRENT_VERSION"
@@ -76,10 +89,25 @@ else
     echo "✅ Updated PCAP_SERVICE_VERSION to $VERSION"
 fi
 
+# Update version in Makefile
+MAKEFILE_VERSION=$(grep '^VERSION=' Makefile | cut -d'=' -f2)
+echo "Current version in Makefile: $MAKEFILE_VERSION"
+
+if [ "$MAKEFILE_VERSION" = "$VERSION" ] && [ -z "$FORCE_FLAG" ]; then
+    echo "⚠️  Version is already set to $VERSION in Makefile"
+elif [ "$MAKEFILE_VERSION" = "$VERSION" ] && [ -n "$FORCE_FLAG" ]; then
+    echo "⚠️  Version is already set to $VERSION in Makefile (--force specified, continuing)"
+else
+    echo "📝 Updating version in Makefile..."
+    sed -i.bak "s/^VERSION=.*/VERSION=$VERSION/" Makefile
+    rm Makefile.bak
+    echo "✅ Updated Makefile VERSION to $VERSION"
+fi
+
 # Check if there are uncommitted changes
-if ! git diff --quiet main.cpp; then
+if ! git diff --quiet main.cpp Makefile; then
     echo "📦 Committing version update..."
-    git add main.cpp
+    git add main.cpp Makefile
     if [ -n "$FORCE_FLAG" ]; then
         # Force commit even if there might be conflicts
         git commit -m "bump version to $VERSION" || git commit --amend -m "bump version to $VERSION"
@@ -129,6 +157,14 @@ if [ "$PUSH_FLAG" = "--push" ]; then
     echo ""
     echo "✅ Changes pushed! GitHub Actions will now build and release."
     echo "   View progress at: https://github.com/whatpulse/linux-external-pcap-service/actions"
+
+    # Switch back to GitButler if we started there
+    if [ "$USING_GITBUTLER" = true ]; then
+        echo ""
+        echo "🔀 Switching back to GitButler workspace..."
+        git checkout gitbutler/workspace
+        echo "✅ Returned to gitbutler/workspace branch"
+    fi
 else
     echo "Next steps:"
     echo "1. Review the changes: git log --oneline -n 2"
@@ -151,6 +187,13 @@ else
     if [ -n "$FORCE_FLAG" ]; then
         echo ""
         echo "⚠️  Force mode enabled - this will overwrite existing releases!"
+    fi
+
+    # Remind about GitButler if applicable
+    if [ "$USING_GITBUTLER" = true ]; then
+        echo ""
+        echo "⚠️  Currently on main branch (switched from gitbutler/workspace)"
+        echo "   After pushing, run: git checkout gitbutler/workspace"
     fi
 fi
 
