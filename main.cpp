@@ -26,7 +26,7 @@
 #include "networkclient.h"
 #include "logger.h"
 
-#define PCAP_SERVICE_VERSION "1.3.0"
+#define PCAP_SERVICE_VERSION "1.4.0"
 
 // Global service instances for signal handler
 std::unique_ptr<CaptureService> g_captureService = nullptr;
