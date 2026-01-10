@@ -35,11 +35,16 @@
 #define ETHERTYPE_IP 0x0800
 #define ETHERTYPE_IPV6 0x86dd
 
-// PF_RING optimization constants - MATCH WORKING CODE EXACTLY
-#define PFRING_FRAME_SIZE 256     // Same as working code
-#define PFRING_FRAME_COUNT 2048   // Same as working code
+// PF_RING buffer configuration
+// Buffer size = PFRING_FRAME_SIZE * PFRING_FRAME_COUNT
+// Default: 256 * 131072 = 32 MB (suitable for 1 Gbps)
+#define PFRING_FRAME_SIZE 256
+#define PFRING_FRAME_COUNT 131072
 #define PFRING_BLOCK_SIZE (PFRING_FRAME_COUNT * PFRING_FRAME_SIZE)
 #define PFRING_BLOCK_COUNT 1
+
+// For 10 Gbps networks, increase the buffer to 256 MB:
+// #define PFRING_FRAME_COUNT 1048576
 
 PfRingCaptureThread::PfRingCaptureThread(bool verbose, IPacketHandler *handler)
     : m_verbose(verbose), m_capturing(false), m_shouldStop(false),

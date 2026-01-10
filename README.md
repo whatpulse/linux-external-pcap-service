@@ -197,6 +197,24 @@ sudo systemctl status whatpulse-pcap-service
 
 **Note:** The service may need to be restarted after upgrading to ensure the new version is running. Package manager installations typically handle this automatically, but manual installations may require a manual restart.
 
+## Performance
+
+The PF_RING capture buffer is configured for 1 Gbps networks by default (32 MB buffer). If you're monitoring higher-speed networks, you may need to increase the buffer size to avoid packet drops during traffic bursts.
+
+To adjust the buffer, edit `pfringcapturethread.cpp` and modify `PFRING_FRAME_COUNT`:
+
+| Network Speed | PFRING_FRAME_COUNT | Buffer Size |
+|---------------|-------------------|-------------|
+| 1 Gbps | 131072 (default) | 32 MB |
+| 10 Gbps | 1048576 | 256 MB |
+
+After changing, rebuild and reinstall the service:
+```bash
+make clean && make
+sudo make install
+sudo systemctl restart whatpulse-pcap-service
+```
+
 ## Troubleshooting
 
 ### Check Service Status
