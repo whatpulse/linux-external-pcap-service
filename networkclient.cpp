@@ -171,10 +171,20 @@ void NetworkClient::flushBatch()
     // Queue the batch for sending
     {
         std::lock_guard<std::mutex> lock(m_queueMutex);
-        if (m_packetQueue.size() > 100) // Reduced queue limit since each entry is a batch
+        if (m_packetQueue.size() >= MAX_QUEUE_BATCHES)
         {
+            // Track cumulative drops for periodic reporting
+            uint64_t batchPackets = batchToSend.size();
+            uint64_t batchDropBytes = std::accumulate(batchToSend.begin(), batchToSend.end(), uint64_t{0},
+                [](uint64_t sum, const PacketData &pkt) { return sum + pkt.dataLength; });
+            m_droppedPackets.fetch_add(batchPackets);
+            m_droppedBytes.fetch_add(batchDropBytes);
+
             LOG_WARNING("Batch queue full (" + std::to_string(m_packetQueue.size()) +
-                       " batches), dropping batch of " + std::to_string(batchToSend.size()) + " packets");
+                       " batches), dropping " + std::to_string(batchPackets) + " packets (" +
+                       std::to_string(batchDropBytes / 1024) + " KB). Cumulative drops: " +
+                       std::to_string(m_droppedPackets.load()) + " packets, " +
+                       std::to_string(m_droppedBytes.load() / 1024 / 1024) + " MB");
             return;
         }
 

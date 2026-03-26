@@ -186,18 +186,24 @@ void PcapCaptureThread::handlePacket(const struct pcap_pkthdr *header, const u_c
     return;
   }
 
+  // Copy packet data starting from IP header (skip Ethernet header)
+  const u_char *ipPacket = packet + sizeof(struct ether_header);
+  uint32_t ipPacketLength = header->caplen - sizeof(struct ether_header);
+
+  // Use the original wire length (header->len) minus the Ethernet header for
+  // accurate byte counting. header->caplen may be less than header->len if
+  // snaplen truncated the capture, and it incorrectly included the Ethernet
+  // header size in the old code.
+  uint16_t ipWireLength = static_cast<uint16_t>(header->len - sizeof(struct ether_header));
+
   // Create packet data structure
   PacketData packetData;
   packetData.ipVersion = ipVersion;
-  packetData.dataLength = header->caplen;
+  packetData.dataLength = ipWireLength;
   packetData.timestamp = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
                                                    std::chrono::system_clock::now().time_since_epoch())
                                                    .count());
   packetData.interfaceName = m_interface;
-
-  // Copy packet data starting from IP header (skip Ethernet header)
-  const u_char *ipPacket = packet + sizeof(struct ether_header);
-  uint32_t ipPacketLength = header->caplen - sizeof(struct ether_header);
 
   // Bounds checking for vector assignment
   if (ipPacketLength > 0 && ipPacketLength <= 65535)

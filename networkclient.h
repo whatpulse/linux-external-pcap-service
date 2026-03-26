@@ -70,9 +70,14 @@ private:
     std::mutex m_batchMutex;
 
     // Batch queue for thread-safe communication
+    static constexpr size_t MAX_QUEUE_BATCHES = 1000;
     std::queue<std::vector<PacketData>> m_packetQueue;
     std::mutex m_queueMutex;
     std::condition_variable m_queueCondition;
+
+    // Drop tracking
+    std::atomic<uint64_t> m_droppedPackets{0};
+    std::atomic<uint64_t> m_droppedBytes{0};
 
     // Network thread for handling TCP communication
     std::unique_ptr<std::thread> m_networkThread;

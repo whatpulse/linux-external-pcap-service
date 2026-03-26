@@ -376,10 +376,25 @@ void PfRingCaptureThread::handlePacket(int ifindex, unsigned int packetLen, cons
         return; // Packet too short
     }
 
+    // Read the actual IP packet length from the IP header itself, since the
+    // ring buffer frame size (256 bytes) truncates the captured data. Without
+    // this, dataLength would reflect the truncated capture (~200 bytes) instead
+    // of the real packet size (typically 1500 bytes), causing massive under-reporting.
+    uint16_t ipTotalLength = 0;
+    if (ipVersion == 4 && packetLen >= 4)
+    {
+        ipTotalLength = (static_cast<uint16_t>(packet[2]) << 8) | packet[3];
+    }
+    else if (ipVersion == 6 && packetLen >= 6)
+    {
+        uint16_t payloadLen = (static_cast<uint16_t>(packet[4]) << 8) | packet[5];
+        ipTotalLength = payloadLen + 40; // IPv6 fixed header is 40 bytes
+    }
+
     // Create packet data structure
     PacketData packetData;
     packetData.ipVersion = ipVersion;
-    packetData.dataLength = packetLen;
+    packetData.dataLength = (ipTotalLength > 0) ? ipTotalLength : static_cast<uint16_t>(packetLen);
     packetData.timestamp = static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::seconds>(
                                                      std::chrono::system_clock::now().time_since_epoch())
                                                      .count());
@@ -404,7 +419,8 @@ void PfRingCaptureThread::handlePacket(int ifindex, unsigned int packetLen, cons
         {
             std::stringstream debug;
             debug << "PFRING [" << ifindex << "] Captured IPv" << static_cast<int>(ipVersion)
-                    << " packet - Len: " << packetLen
+                    << " packet - CapturedLen: " << packetLen
+                    << ", IPLen: " << packetData.dataLength
                     << ", Header: 0x";
             for (size_t i = 0; i < std::min(static_cast<size_t>(4), static_cast<size_t>(packetLen)); i++)
             {
