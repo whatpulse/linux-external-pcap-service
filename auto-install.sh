@@ -159,6 +159,35 @@ check_dependencies() {
     fi
 }
 
+# Check if the package is already installed and get its version
+check_installed_version() {
+    INSTALLED_VERSION=""
+
+    case "$PACKAGE_TYPE" in
+        deb)
+            if dpkg -s "$PACKAGE_NAME" >/dev/null 2>&1; then
+                INSTALLED_VERSION=$(dpkg -s "$PACKAGE_NAME" 2>/dev/null | grep '^Version:' | awk '{print $2}')
+            fi
+            ;;
+        rpm)
+            if rpm -q "$PACKAGE_NAME" >/dev/null 2>&1; then
+                INSTALLED_VERSION=$(rpm -q --queryformat '%{VERSION}' "$PACKAGE_NAME" 2>/dev/null)
+            fi
+            ;;
+        arch)
+            if pacman -Q "$PACKAGE_NAME" >/dev/null 2>&1; then
+                INSTALLED_VERSION=$(pacman -Q "$PACKAGE_NAME" 2>/dev/null | awk '{print $2}' | sed 's/-.*//')
+            fi
+            ;;
+    esac
+
+    if [ -n "$INSTALLED_VERSION" ]; then
+        print_info "Currently installed version: $INSTALLED_VERSION"
+    else
+        print_info "No existing installation found"
+    fi
+}
+
 # Get latest release information from GitHub
 get_latest_release() {
     print_info "Fetching latest release information..."
@@ -211,6 +240,20 @@ get_latest_release() {
     fi
 
     print_success "Latest version: $VERSION"
+
+    # Compare with installed version
+    if [ -n "$INSTALLED_VERSION" ]; then
+        if [ "$INSTALLED_VERSION" = "$VERSION" ]; then
+            print_success "Already running the latest version ($VERSION)"
+            cleanup
+            exit 0
+        else
+            INSTALL_MODE="upgrade"
+            print_info "Upgrading from $INSTALLED_VERSION to $VERSION"
+        fi
+    else
+        INSTALL_MODE="install"
+    fi
 }
 
 # Download the package
@@ -304,10 +347,18 @@ setup_service() {
 print_final_instructions() {
     echo ""
     echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}  Installation Complete!${NC}"
+    if [ "$INSTALL_MODE" = "upgrade" ]; then
+        echo -e "${GREEN}  Upgrade Complete!${NC}"
+    else
+        echo -e "${GREEN}  Installation Complete!${NC}"
+    fi
     echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}"
     echo ""
-    echo "WhatPulse PCap Service v$VERSION has been installed and started."
+    if [ "$INSTALL_MODE" = "upgrade" ]; then
+        echo "WhatPulse PCap Service upgraded from $INSTALLED_VERSION to $VERSION."
+    else
+        echo "WhatPulse PCap Service v$VERSION has been installed and started."
+    fi
     echo ""
     echo "Useful commands:"
     echo "  • Check status:  sudo systemctl status $PACKAGE_NAME"
@@ -331,6 +382,7 @@ main() {
     detect_distro
     determine_package_type
     check_dependencies
+    check_installed_version
     get_latest_release
     download_package
     install_package
