@@ -234,7 +234,7 @@ get_latest_release() {
         esac
     fi
 
-    if [ -z "$VERSION" ] || [ -z "$DOWNLOAD_URL" ]; then
+    if [ -z "$VERSION" ] || [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
         print_error "Failed to parse release information"
         exit 1
     fi
