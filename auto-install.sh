@@ -214,7 +214,7 @@ get_latest_release() {
                 DOWNLOAD_URL=$(echo "$response" | jq -r '.assets[] | select(.name | endswith(".rpm")) | .browser_download_url')
                 ;;
             arch)
-                DOWNLOAD_URL=$(echo "$response" | jq -r '.assets[] | select(.name | contains(".pkg.tar.")) | .browser_download_url')
+                DOWNLOAD_URL=$(echo "$response" | jq -r '.assets[] | select(.name | contains(".pkg.tar.")) and (contains("debug") | not)) | .browser_download_url' | head -n 1)
                 ;;
         esac
     else
