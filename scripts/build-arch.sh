@@ -26,6 +26,7 @@ arch=('x86_64')
 url="https://whatpulse.org"
 license=('custom')
 depends=('libpcap' 'systemd')
+options=('!debug')
 source=("\$pkgname" "\$pkgname.service")
 sha256sums=('SKIP' 'SKIP')
 
@@ -46,7 +47,7 @@ EOF
     # Move to dist directory
     cd ../../..
     mkdir -p dist
-    find "$BUILD_DIR" -name "*.pkg.tar.*" -exec cp {} dist/ \;
+    find "$BUILD_DIR" -name "*.pkg.tar.*" ! -name "*-debug-*" -exec cp {} dist/ \;
 
     echo "Arch package created in dist/ directory"
 elif command -v docker >/dev/null 2>&1; then
@@ -63,17 +64,24 @@ arch=('x86_64')
 url="https://whatpulse.org"
 license=('custom')
 depends=('libpcap' 'systemd')
-source=("\$pkgname" "\$pkgname.service")
-sha256sums=('SKIP' 'SKIP')
+makedepends=('gcc' 'make')
+options=('!debug')
+source=()
+sha256sums=()
+
+build() {
+    cd "\$startdir"
+    make shared
+}
 
 package() {
-    install -Dm755 "\$pkgname" "\$pkgdir/usr/bin/\$pkgname"
-    install -Dm644 "\$pkgname.service" "\$pkgdir/usr/lib/systemd/system/\$pkgname.service"
+    install -Dm755 "\$startdir/\$pkgname" "\$pkgdir/usr/bin/\$pkgname"
+    install -Dm644 "\$startdir/\$pkgname.service" "\$pkgdir/usr/lib/systemd/system/\$pkgname.service"
 }
 EOF
 
     # Copy source files to build directory
-    cp "$PACKAGE_NAME" "$BUILD_DIR/"
+    cp *.cpp *.h Makefile "$BUILD_DIR/"
     cp "${PACKAGE_NAME}.service" "$BUILD_DIR/"
 
     # Use official Arch Linux Docker image to build the package
@@ -88,7 +96,7 @@ EOF
 
     # Move to dist directory
     mkdir -p dist
-    find "$BUILD_DIR" -name "*.pkg.tar.*" -exec cp {} dist/ \;
+    find "$BUILD_DIR" -name "*.pkg.tar.*" ! -name "*-debug-*" -exec cp {} dist/ \;
 
     echo "Arch package created using Docker in dist/ directory"
 else
