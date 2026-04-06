@@ -214,7 +214,7 @@ get_latest_release() {
                 DOWNLOAD_URL=$(echo "$response" | jq -r '.assets[] | select(.name | endswith(".rpm")) | .browser_download_url')
                 ;;
             arch)
-                DOWNLOAD_URL=$(echo "$response" | jq -r '.assets[] | select(.name | contains(".pkg.tar.")) | .browser_download_url')
+                DOWNLOAD_URL=$(echo "$response" | jq -r '.assets[] | select(.name | contains(".pkg.tar.")) and (contains("debug") | not)) | .browser_download_url' | head -n 1)
                 ;;
         esac
     else
@@ -234,7 +234,7 @@ get_latest_release() {
         esac
     fi
 
-    if [ -z "$VERSION" ] || [ -z "$DOWNLOAD_URL" ]; then
+    if [ -z "$VERSION" ] || [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
         print_error "Failed to parse release information"
         exit 1
     fi
