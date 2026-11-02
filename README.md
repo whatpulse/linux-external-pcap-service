@@ -31,6 +31,8 @@ This script will:
 - Install it using your package manager
 - Start and enable the systemd service
 
+Packages are available for x86_64 on Ubuntu 22.04+, Debian 12+, Fedora 40+, RHEL-compatible 8+ (Rocky, AlmaLinux, Oracle), Amazon Linux 2023, openSUSE Leap 15.6+ and Tumbleweed, Arch-based distributions, and derivatives of these. On anything else, [build from source](#build-from-source).
+
 ### Manual Package Installation
 
 Download the latest packages from the [GitHub Releases page](https://github.com/whatpulse/linux-external-pcap-service).

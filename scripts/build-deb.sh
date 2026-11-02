@@ -55,7 +55,7 @@ Version: $VERSION
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: libpcap0.8
+Depends: libpcap0.8, libc6 (>= 2.34)
 Maintainer: WhatPulse <support@whatpulse.org>
 Description: External PCap service for WhatPulse network monitoring
  This service provides network packet capture capabilities for WhatPulse

@@ -7,9 +7,9 @@
 # the appropriate package for the WhatPulse External PCap Service.
 #
 # Usage:
-#   curl -fsSL https://whatpulse.org/linux/auto-install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/whatpulse/linux-external-pcap-service/main/auto-install.sh | sudo bash
 #   or
-#   wget -qO- https://whatpulse.org/linux/auto-install.sh | bash
+#   wget -qO- https://raw.githubusercontent.com/whatpulse/linux-external-pcap-service/main/auto-install.sh | sudo bash
 #
 
 set -e
@@ -64,11 +64,10 @@ detect_distro() {
         . /etc/os-release
         DISTRO=$ID
         DISTRO_LIKE=$ID_LIKE
-        VERSION_ID=$VERSION_ID
         print_success "Detected: $PRETTY_NAME"
     elif [ -f /etc/lsb-release ]; then
         . /etc/lsb-release
-        DISTRO=$DISTRIB_ID
+        DISTRO=$(echo "$DISTRIB_ID" | tr '[:upper:]' '[:lower:]')
         print_success "Detected: $DISTRIB_DESCRIPTION"
     else
         print_error "Unable to detect Linux distribution"
@@ -78,35 +77,62 @@ detect_distro() {
     fi
 }
 
+# Explain how to build from source when no pre-built package fits this system
+print_source_build_instructions() {
+    print_info "You can build from source instead:"
+    echo ""
+    echo "  # Install dependencies (adjust for your package manager):"
+    echo "  sudo apt-get install build-essential libpcap-dev  # Debian/Ubuntu"
+    echo "  sudo dnf install gcc-c++ make libpcap-devel       # Fedora/RHEL"
+    echo "  sudo zypper install gcc-c++ make libpcap-devel    # openSUSE"
+    echo "  sudo pacman -S base-devel libpcap                 # Arch"
+    echo ""
+    echo "  # Download and build:"
+    echo "  wget https://github.com/$GITHUB_REPO/releases/latest/download/$PACKAGE_NAME-VERSION-source.tar.gz"
+    echo "  tar xzf $PACKAGE_NAME-*-source.tar.gz"
+    echo "  cd $PACKAGE_NAME-*"
+    echo "  make"
+    echo "  sudo make install"
+    echo ""
+    print_info "For more details, see: https://github.com/$GITHUB_REPO/blob/main/README.md"
+}
+
+# Pre-built packages are x86_64 only
+check_architecture() {
+    local arch
+    arch=$(uname -m)
+
+    if [ "$arch" != "x86_64" ]; then
+        print_error "No pre-built package available for your architecture: $arch"
+        echo ""
+        print_source_build_instructions
+        exit 1
+    fi
+}
+
 # Determine package type based on distro
 determine_package_type() {
     case "$DISTRO" in
         ubuntu|debian|linuxmint|pop|elementary|zorin)
             PACKAGE_TYPE="deb"
-            PACKAGE_EXT="deb"
             ;;
-        fedora|rhel|centos|rocky|almalinux|oracle)
+        fedora|rhel|centos|rocky|almalinux|ol|amzn|opensuse*|sles|sled)
             PACKAGE_TYPE="rpm"
-            PACKAGE_EXT="rpm"
             ;;
         arch|manjaro|endeavouros|garuda)
             PACKAGE_TYPE="arch"
-            PACKAGE_EXT="pkg.tar.zst"
             ;;
         *)
             # Check distro-like for derived distributions
             case "$DISTRO_LIKE" in
                 *debian*|*ubuntu*)
                     PACKAGE_TYPE="deb"
-                    PACKAGE_EXT="deb"
                     ;;
-                *rhel*|*fedora*)
+                *rhel*|*fedora*|*centos*|*suse*)
                     PACKAGE_TYPE="rpm"
-                    PACKAGE_EXT="rpm"
                     ;;
                 *arch*)
                     PACKAGE_TYPE="arch"
-                    PACKAGE_EXT="pkg.tar.zst"
                     ;;
                 *)
                     PACKAGE_TYPE="unsupported"
@@ -118,22 +144,7 @@ determine_package_type() {
     if [ "$PACKAGE_TYPE" = "unsupported" ]; then
         print_error "No pre-built package available for your distribution: $DISTRO"
         echo ""
-        print_info "You can build from source instead:"
-        echo ""
-        echo "  # Install dependencies (adjust for your package manager):"
-        echo "  sudo apt-get install build-essential libpcap-dev  # Debian/Ubuntu"
-        echo "  sudo yum install gcc-c++ libpcap-devel           # RHEL/CentOS"
-        echo "  sudo dnf install gcc-c++ libpcap-devel           # Fedora"
-        echo "  sudo pacman -S base-devel libpcap                # Arch"
-        echo ""
-        echo "  # Download and build:"
-        echo "  wget https://github.com/$GITHUB_REPO/releases/latest/download/$PACKAGE_NAME-VERSION-source.tar.gz"
-        echo "  tar xzf $PACKAGE_NAME-*-source.tar.gz"
-        echo "  cd $PACKAGE_NAME-*"
-        echo "  make"
-        echo "  sudo make install"
-        echo ""
-        print_info "For more details, see: https://github.com/$GITHUB_REPO/blob/main/README.md"
+        print_source_build_instructions
         exit 1
     fi
 
@@ -142,20 +153,19 @@ determine_package_type() {
 
 # Check for required commands
 check_dependencies() {
-    local missing_deps=()
-
-    if ! command -v curl >/dev/null 2>&1; then
-        missing_deps+=("curl")
-    fi
-
-    if ! command -v jq >/dev/null 2>&1; then
-        print_warning "jq not found, will use fallback method for JSON parsing"
-    fi
-
-    if [ ${#missing_deps[@]} -gt 0 ]; then
-        print_error "Missing required dependencies: ${missing_deps[*]}"
-        print_info "Please install them and try again"
+    if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+        print_error "Missing required dependency: curl or wget"
+        print_info "Please install one of them and try again"
         exit 1
+    fi
+}
+
+# Download a URL to a file, or to stdout when no file is given
+fetch() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL -o "${2:--}" "$1"
+    else
+        wget -qO "${2:--}" "$1"
     fi
 }
 
@@ -194,47 +204,25 @@ get_latest_release() {
 
     local api_url="https://api.github.com/repos/$GITHUB_REPO/releases/latest"
     local response
+    local asset_pattern
 
-    response=$(curl -fsSL "$api_url" 2>/dev/null)
-
-    if [ $? -ne 0 ]; then
+    if ! response=$(fetch "$api_url" 2>/dev/null); then
         print_error "Failed to fetch release information from GitHub"
+        print_info "Check your connection, or try again later if GitHub's API rate limit was reached"
         exit 1
     fi
 
-    # Extract version and download URL
-    if command -v jq >/dev/null 2>&1; then
-        VERSION=$(echo "$response" | jq -r '.tag_name' | sed 's/^v//')
+    case "$PACKAGE_TYPE" in
+        deb)  asset_pattern='\.deb$' ;;
+        rpm)  asset_pattern='\.rpm$' ;;
+        arch) asset_pattern='\.pkg\.tar\.[a-z0-9]+$' ;;
+    esac
 
-        case "$PACKAGE_TYPE" in
-            deb)
-                DOWNLOAD_URL=$(echo "$response" | jq -r '.assets[] | select(.name | endswith(".deb")) | .browser_download_url')
-                ;;
-            rpm)
-                DOWNLOAD_URL=$(echo "$response" | jq -r '.assets[] | select(.name | endswith(".rpm")) | .browser_download_url')
-                ;;
-            arch)
-                DOWNLOAD_URL=$(echo "$response" | jq -r '.assets[] | select(.name | contains(".pkg.tar.")) and (contains("debug") | not)) | .browser_download_url' | head -n 1)
-                ;;
-        esac
-    else
-        # Fallback parsing without jq
-        VERSION=$(echo "$response" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 | sed 's/^v//')
+    # Parsed with grep so that this doesn't depend on jq being installed
+    VERSION=$(echo "$response" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 | sed 's/^v//')
+    DOWNLOAD_URL=$(echo "$response" | grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 | grep -E "$asset_pattern" | grep -v 'debug' | head -n 1)
 
-        case "$PACKAGE_TYPE" in
-            deb)
-                DOWNLOAD_URL=$(echo "$response" | grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*\.deb"' | head -1 | cut -d'"' -f4)
-                ;;
-            rpm)
-                DOWNLOAD_URL=$(echo "$response" | grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*\.rpm"' | head -1 | cut -d'"' -f4)
-                ;;
-            arch)
-                DOWNLOAD_URL=$(echo "$response" | grep -o '"browser_download_url"[[:space:]]*:[[:space:]]*"[^"]*\.pkg\.tar\.[^"]*"' | head -1 | cut -d'"' -f4)
-                ;;
-        esac
-    fi
-
-    if [ -z "$VERSION" ] || [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
+    if [ -z "$VERSION" ] || [ -z "$DOWNLOAD_URL" ]; then
         print_error "Failed to parse release information"
         exit 1
     fi
@@ -263,7 +251,7 @@ download_package() {
     TEMP_DIR=$(mktemp -d)
     PACKAGE_FILE="$TEMP_DIR/$(basename "$DOWNLOAD_URL")"
 
-    if ! curl -fsSL -o "$PACKAGE_FILE" "$DOWNLOAD_URL"; then
+    if ! fetch "$DOWNLOAD_URL" "$PACKAGE_FILE"; then
         print_error "Failed to download package"
         rm -rf "$TEMP_DIR"
         exit 1
@@ -272,37 +260,51 @@ download_package() {
     print_success "Package downloaded to $PACKAGE_FILE"
 }
 
-# Install the package
-install_package() {
-    print_info "Installing package..."
-
+# Install the package with the system's package manager, which resolves dependencies
+run_package_manager() {
     case "$PACKAGE_TYPE" in
         deb)
-            if ! dpkg -i "$PACKAGE_FILE" 2>/dev/null; then
-                print_warning "Installing missing dependencies..."
-                apt-get update -qq
-                apt-get install -f -y
-            fi
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq || print_warning "Could not refresh package lists, continuing anyway"
+            apt-get install -y "$PACKAGE_FILE"
             ;;
         rpm)
             if command -v dnf >/dev/null 2>&1; then
                 dnf install -y "$PACKAGE_FILE"
             elif command -v yum >/dev/null 2>&1; then
                 yum install -y "$PACKAGE_FILE"
+            elif command -v zypper >/dev/null 2>&1; then
+                zypper --non-interactive install --allow-unsigned-rpm "$PACKAGE_FILE"
             else
-                rpm -ivh "$PACKAGE_FILE"
+                rpm -Uvh "$PACKAGE_FILE"
             fi
             ;;
         arch)
             pacman -U --noconfirm "$PACKAGE_FILE"
             ;;
     esac
+}
 
-    if [ $? -eq 0 ]; then
+install_package() {
+    print_info "Installing package..."
+
+    if run_package_manager; then
         print_success "Package installed successfully"
     else
         print_error "Package installation failed"
-        rm -rf "$TEMP_DIR"
+        exit 1
+    fi
+}
+
+# A package can install fine and still not run, e.g. when the system's glibc is too old
+verify_binary() {
+    local output
+
+    if ! output=$("$PACKAGE_NAME" --version 2>&1); then
+        print_error "The installed service cannot run on this system:"
+        echo "$output"
+        echo ""
+        print_source_build_instructions
         exit 1
     fi
 }
@@ -317,29 +319,42 @@ cleanup() {
 
 # Start and enable the service
 setup_service() {
+    SERVICE_RUNNING=false
+
+    if [ ! -d /run/systemd/system ]; then
+        print_warning "systemd is not running, so the service was not started"
+        print_info "Start it manually with: sudo $PACKAGE_NAME"
+        return
+    fi
+
     print_info "Setting up systemd service..."
 
-    systemctl daemon-reload
+    systemctl daemon-reload || true
 
     if systemctl is-active --quiet "$PACKAGE_NAME"; then
         print_info "Service is already running, restarting..."
-        systemctl restart "$PACKAGE_NAME"
+        systemctl restart "$PACKAGE_NAME" || true
     else
-        systemctl start "$PACKAGE_NAME"
+        systemctl start "$PACKAGE_NAME" || true
     fi
 
     if systemctl is-enabled --quiet "$PACKAGE_NAME"; then
         print_info "Service is already enabled for automatic startup"
-    else
-        systemctl enable "$PACKAGE_NAME"
+    elif systemctl enable "$PACKAGE_NAME"; then
         print_success "Service enabled for automatic startup"
+    else
+        print_warning "Could not enable the service for automatic startup"
     fi
+
+    # Give the service a moment: it counts as active right after starting, even if it then exits
+    sleep 2
 
     # Check service status
     if systemctl is-active --quiet "$PACKAGE_NAME"; then
+        SERVICE_RUNNING=true
         print_success "Service is running"
     else
-        print_warning "Service failed to start. Check status with: sudo systemctl status $PACKAGE_NAME"
+        print_warning "Service failed to start. Check why with: sudo journalctl -u $PACKAGE_NAME -n 50"
     fi
 }
 
@@ -356,19 +371,23 @@ print_final_instructions() {
     echo ""
     if [ "$INSTALL_MODE" = "upgrade" ]; then
         echo "WhatPulse PCap Service upgraded from $INSTALLED_VERSION to $VERSION."
-    else
+    elif [ "$SERVICE_RUNNING" = "true" ]; then
         echo "WhatPulse PCap Service v$VERSION has been installed and started."
+    else
+        echo "WhatPulse PCap Service v$VERSION has been installed, but is not running."
     fi
     echo ""
     echo "Useful commands:"
     echo "  • Check status:  sudo systemctl status $PACKAGE_NAME"
-    echo "  • View logs:     sudo tail -f /var/log/whatpulse-pcap.log"
+    echo "  • View logs:     sudo journalctl -u $PACKAGE_NAME -f"
     echo "  • Stop service:  sudo systemctl stop $PACKAGE_NAME"
     echo "  • Start service: sudo systemctl start $PACKAGE_NAME"
     echo "  • Restart:       sudo systemctl restart $PACKAGE_NAME"
     echo ""
-    echo "The service will automatically start on system boot."
-    echo ""
+    if [ "$SERVICE_RUNNING" = "true" ]; then
+        echo "The service will automatically start on system boot."
+        echo ""
+    fi
     print_info "For support and documentation, visit:"
     print_info "https://github.com/$GITHUB_REPO"
     echo ""
@@ -379,6 +398,7 @@ main() {
     print_header
 
     check_root
+    check_architecture
     detect_distro
     determine_package_type
     check_dependencies
@@ -386,6 +406,7 @@ main() {
     get_latest_release
     download_package
     install_package
+    verify_binary
     cleanup
     setup_service
     print_final_instructions
