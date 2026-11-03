@@ -22,7 +22,6 @@ Group:          Applications/Internet
 License:        Proprietary
 URL:            https://whatpulse.org
 BuildArch:      x86_64
-Requires:       libpcap
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root
 
 %description
@@ -74,12 +73,26 @@ fi
 - Initial RPM package release
 EOF
 
-# Copy source files to SOURCES directory
-cp "$PACKAGE_NAME" "$BUILD_DIR/SOURCES/"
+# Copy source files to the build directory
+mkdir -p "$BUILD_DIR/src"
+cp ./*.cpp ./*.h Makefile "$BUILD_DIR/src/"
 cp "${PACKAGE_NAME}.service" "$BUILD_DIR/SOURCES/"
 
-# Build the RPM
-rpmbuild --define "_topdir $(pwd)/$BUILD_DIR" -bb "$SPEC_FILE"
+# Build on the oldest supported RHEL-family release rather than on the host. The
+# binary has to link against libpcap.so.1 (Debian/Ubuntu's soname is libpcap.so.0.8)
+# and an old enough glibc to run on every RPM-based distribution. rpmbuild then
+# derives the package's library dependencies from the binary, by soname, which also
+# works on openSUSE, where the library's package is called libpcap1 instead of libpcap.
+docker run --rm --platform linux/amd64 -v "$(pwd)/$BUILD_DIR:/build" -w /build \
+    almalinux:8 \
+    bash -c "
+        set -e
+        dnf --enablerepo=powertools install -y -q gcc-c++ make libpcap-devel rpm-build
+        make -C src shared
+        cp src/$PACKAGE_NAME SOURCES/
+        rpmbuild --define '_topdir /build' --define 'dist %{nil}' --define 'debug_package %{nil}' -bb $PACKAGE_NAME.spec
+        chown -R $(id -u):$(id -g) /build
+    "
 
 # Move to dist directory
 mkdir -p dist

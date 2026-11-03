@@ -27,8 +27,7 @@ Creates RedHat/CentOS/Fedora packages (`.rpm` files).
 ```
 
 **Requirements:**
-- `rpm-build`
-- `rpmbuild`
+- Docker (the binary and package are built in an AlmaLinux 8 container, so that they run on all RPM-based distributions)
 
 **Output:** `dist/whatpulse-pcap-service-VERSION-1.x86_64.rpm`
 
