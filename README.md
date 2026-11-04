@@ -303,7 +303,7 @@ Releases are automated via GitHub Actions. Follow these steps to create a new re
 ```bash
 git add main.cpp
 git commit -m "bump version to 1.0.1"
-git push origin master
+git push origin main
 ```
 
 **Create and push version tag:**

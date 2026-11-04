@@ -3,7 +3,8 @@ CFLAGS=-std=c++17 -Wall -Wextra -O2 -pthread
 LDFLAGS=-lpcap -pthread
 TARGET=whatpulse-pcap-service
 SOURCES=main.cpp captureservice.cpp networkclient.cpp tcpclient.cpp pcapcapturethread.cpp pfringcapturethread.cpp logger.cpp
-VERSION=1.5.1
+# The version is defined once, in main.cpp
+VERSION := $(shell awk -F '"' '/define PCAP_SERVICE_VERSION /{print $$2}' main.cpp)
 
 # Default target
 all: $(TARGET)

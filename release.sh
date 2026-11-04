@@ -89,25 +89,10 @@ else
     echo "✅ Updated PCAP_SERVICE_VERSION to $VERSION"
 fi
 
-# Update version in Makefile
-MAKEFILE_VERSION=$(grep '^VERSION=' Makefile | cut -d'=' -f2)
-echo "Current version in Makefile: $MAKEFILE_VERSION"
-
-if [ "$MAKEFILE_VERSION" = "$VERSION" ] && [ -z "$FORCE_FLAG" ]; then
-    echo "⚠️  Version is already set to $VERSION in Makefile"
-elif [ "$MAKEFILE_VERSION" = "$VERSION" ] && [ -n "$FORCE_FLAG" ]; then
-    echo "⚠️  Version is already set to $VERSION in Makefile (--force specified, continuing)"
-else
-    echo "📝 Updating version in Makefile..."
-    sed -i.bak "s/^VERSION=.*/VERSION=$VERSION/" Makefile
-    rm Makefile.bak
-    echo "✅ Updated Makefile VERSION to $VERSION"
-fi
-
 # Check if there are uncommitted changes
-if ! git diff --quiet main.cpp Makefile; then
+if ! git diff --quiet main.cpp; then
     echo "📦 Committing version update..."
-    git add main.cpp Makefile
+    git add main.cpp
     if [ -n "$FORCE_FLAG" ]; then
         # Force commit even if there might be conflicts
         git commit -m "bump version to $VERSION" || git commit --amend -m "bump version to $VERSION"
